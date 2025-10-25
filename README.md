@@ -17,7 +17,7 @@ This is my personal playground for learning and building high-performance, low-l
 - Pure Rust fallback kernels for ARM64 platforms with or without Accelerate (optimized for your hardware).
 - Easy benchmarking and comparison against NumPy, Torch (CPU, MPS), and any BLAS backend.
 
-## 🛠️ Usage Examples
+## Usage Examples
 
 ### From Python
 
