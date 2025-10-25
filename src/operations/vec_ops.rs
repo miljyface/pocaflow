@@ -1,139 +1,46 @@
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-
-use crate::utils::{
-    validate_vector_lengths, 
-    validate_3d_vectors, 
-    validate_nonzero_magnitude,
-    validate_nonzero_magnitude_f32
-};
-
-/// f64 extraction helper
-fn extract_vec_f64(obj: &PyAny) -> PyResult<Vec<f64>> {
-    // try to get .data attribute first for tensors
-    if let Ok(data) = obj.getattr("data") {
-        data.extract::<&PyList>()?.extract()
-    } else {
-        // fallback
-        obj.extract::<&PyList>()?.extract()
-    }
-}
-
-// f32 extraction helper
-fn extract_vec_f32(obj: &PyAny) -> PyResult<Vec<f32>> {
-    if let Ok(data) = obj.getattr("data") {
-        data.extract::<&PyList>()?.extract()
-    } else {
-        obj.extract::<&PyList>()?.extract()
-    }
-}
+use numpy::{PyReadonlyArray1, PyArray1};
+use crate::utils::{validate_vector_lengths, validate_3d_vectors, validate_nonzero_magnitude};
 
 #[pyfunction]
-pub fn dot(a: &PyAny, b: &PyAny) -> PyResult<f64> {
-    let a_vec = extract_vec_f64(a)?;
-    let b_vec = extract_vec_f64(b)?;
-    
+pub fn dot(a: PyReadonlyArray1<f64>, b: PyReadonlyArray1<f64>) -> PyResult<f64> {
+    let a_vec = a.as_slice()?;
+    let b_vec = b.as_slice()?;
     validate_vector_lengths(a_vec.len(), b_vec.len())?;
-    
-    let result: f64 = a_vec.iter()
-        .zip(b_vec.iter())
-        .map(|(x, y)| x * y)
-        .sum();
-    
-    Ok(result)
+    Ok(a_vec.iter().zip(b_vec).map(|(x, y)| x * y).sum())
 }
 
 #[pyfunction]
-pub fn dot_f32(a: &PyAny, b: &PyAny) -> PyResult<f32> {
-    let a_vec = extract_vec_f32(a)?;
-    let b_vec = extract_vec_f32(b)?;
-    
-    validate_vector_lengths(a_vec.len(), b_vec.len())?;
-    
-    let result: f32 = a_vec.iter()
-        .zip(b_vec.iter())
-        .map(|(x, y)| x * y)
-        .sum();
-    
-    Ok(result)
-}
-
-#[pyfunction]
-pub fn cross(a: &PyAny, b: &PyAny) -> PyResult<Vec<f64>> {
-    let a_vec = extract_vec_f64(a)?;
-    let b_vec = extract_vec_f64(b)?;
-    
+pub fn cross<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray1<f64>,
+    b: PyReadonlyArray1<f64>
+) -> PyResult<&'py PyArray1<f64>> {
+    let a_vec = a.as_slice()?;
+    let b_vec = b.as_slice()?;
     validate_3d_vectors(a_vec.len(), b_vec.len())?;
-    
     let result = vec![
         a_vec[1] * b_vec[2] - a_vec[2] * b_vec[1],
         a_vec[2] * b_vec[0] - a_vec[0] * b_vec[2],
         a_vec[0] * b_vec[1] - a_vec[1] * b_vec[0],
     ];
-    
-    Ok(result)
+    Ok(PyArray1::from_vec(py, result))
 }
 
 #[pyfunction]
-pub fn cross_f32(a: &PyAny, b: &PyAny) -> PyResult<Vec<f32>> {
-    let a_vec = extract_vec_f32(a)?;
-    let b_vec = extract_vec_f32(b)?;
-    
-    validate_3d_vectors(a_vec.len(), b_vec.len())?;
-    
-    let result = vec![
-        a_vec[1] * b_vec[2] - a_vec[2] * b_vec[1],
-        a_vec[2] * b_vec[0] - a_vec[0] * b_vec[2],
-        a_vec[0] * b_vec[1] - a_vec[1] * b_vec[0],
-    ];
-    
-    Ok(result)
+pub fn magnitude(a: PyReadonlyArray1<f64>) -> PyResult<f64> {
+    let a_vec = a.as_slice()?;
+    Ok(a_vec.iter().map(|x| x * x).sum::<f64>().sqrt())
 }
 
 #[pyfunction]
-pub fn magnitude(a: &PyAny) -> PyResult<f64> {
-    let a_vec = extract_vec_f64(a)?;
-    let result = a_vec.iter()
-        .map(|x| x * x)
-        .sum::<f64>()
-        .sqrt();
-    Ok(result)
-}
-
-#[pyfunction]
-pub fn magnitude_f32(a: &PyAny) -> PyResult<f32> {
-    let a_vec = extract_vec_f32(a)?;
-    let result = a_vec.iter()
-        .map(|x| x * x)
-        .sum::<f32>()
-        .sqrt();
-    Ok(result)
-}
-
-#[pyfunction]
-pub fn normalize(a: &PyAny) -> PyResult<Vec<f64>> {
-    let a_vec = extract_vec_f64(a)?;
-    let mag = a_vec.iter()
-        .map(|x| x * x)
-        .sum::<f64>()
-        .sqrt();
+pub fn normalize<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray1<f64>
+) -> PyResult<&'py PyArray1<f64>> {
+    let a_vec = a.as_slice()?;
+    let mag = a_vec.iter().map(|x| x * x).sum::<f64>().sqrt();
     validate_nonzero_magnitude(mag)?;
-    let result: Vec<f64> = a_vec.iter()
-        .map(|x| x / mag)
-        .collect();
-    Ok(result)
-}
-
-#[pyfunction]
-pub fn normalize_f32(a: &PyAny) -> PyResult<Vec<f32>> {
-    let a_vec = extract_vec_f32(a)?;
-    let mag = a_vec.iter()
-        .map(|x| x * x)
-        .sum::<f32>()
-        .sqrt();
-    validate_nonzero_magnitude_f32(mag)?;
-    let result: Vec<f32> = a_vec.iter()
-        .map(|x| x / mag)
-        .collect();
-    Ok(result)
+    let result: Vec<f64> = a_vec.iter().map(|x| x / mag).collect();
+    Ok(PyArray1::from_vec(py, result))
 }

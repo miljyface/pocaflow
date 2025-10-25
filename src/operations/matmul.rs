@@ -1,49 +1,25 @@
 use pyo3::prelude::*;
-use ndarray::Array2;
-use crate::blas::{dgemm, sgemm};
+use numpy::{PyReadonlyArray2, PyArray2};
 use crate::utils::validate_matmul_dims;
-use super::{pylist_to_array2_f64, pylist_to_array2_f32, array2_to_vec, extract_list};
-
-// implicated matmul functions don't call these LOL
-pub fn matmul_impl(a: &PyAny, b: &PyAny) -> PyResult<Array2<f64>> {
-    let a_list = extract_list(a)?;
-    let b_list = extract_list(b)?;
-    
-    let a_array = pylist_to_array2_f64(a_list)?;
-    let b_array = pylist_to_array2_f64(b_list)?;
-    
-    let (m, k1) = (a_array.nrows(), a_array.ncols());
-    let (k2, n) = (b_array.nrows(), b_array.ncols());
-    
-    validate_matmul_dims(m, k1, k2, n)?;
-    
-    Ok(dgemm(a_array.view(), b_array.view()))
-}
-
-pub fn matmul_f32_impl(a: &PyAny, b: &PyAny) -> PyResult<Array2<f32>> {
-    let a_list = extract_list(a)?;
-    let b_list = extract_list(b)?;
-    
-    let a_array = pylist_to_array2_f32(a_list)?;
-    let b_array = pylist_to_array2_f32(b_list)?;
-    
-    let (m, k1) = (a_array.nrows(), a_array.ncols());
-    let (k2, n) = (b_array.nrows(), b_array.ncols());
-    
-    validate_matmul_dims(m, k1, k2, n)?;
-    
-    Ok(sgemm(a_array.view(), b_array.view()))
-}
-
-/// call these one in python
-#[pyfunction]
-pub fn matmul(a: &PyAny, b: &PyAny) -> PyResult<Vec<Vec<f64>>> {
-    let result = matmul_impl(a, b)?;
-    Ok(array2_to_vec(result))
-}
+use crate::blas::dgemm;
 
 #[pyfunction]
-pub fn matmul_f32(a: &PyAny, b: &PyAny) -> PyResult<Vec<Vec<f32>>> {
-    let result = matmul_f32_impl(a, b)?;
-    Ok(array2_to_vec(result))
+pub fn matmul<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'py, f64>,
+    b: PyReadonlyArray2<'py, f64>
+) -> PyResult<&'py PyArray2<f64>> {
+    let a = a.as_array();
+    let b = b.as_array();
+
+    let (m, k1) = a.dim();
+    let (k2, n) = b.dim();
+    validate_matmul_dims(m, k1, k2, n)?;
+
+    let result = dgemm(
+        a.view().into_dimensionality::<ndarray::Ix2>().unwrap(),
+        b.view().into_dimensionality::<ndarray::Ix2>().unwrap()
+    );
+
+    Ok(PyArray2::from_array(py, &result))
 }

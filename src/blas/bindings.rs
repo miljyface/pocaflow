@@ -20,23 +20,6 @@ extern "C" {
         c: *mut f64,
         ldc: i32,
     );
-    
-    pub fn cblas_sgemm(
-        order: i32,
-        transa: i32,
-        transb: i32,
-        m: i32,
-        n: i32,
-        k: i32,
-        alpha: f32,
-        a: *const f32,
-        lda: i32,
-        b: *const f32,
-        ldb: i32,
-        beta: f32,
-        c: *mut f32,
-        ldc: i32,
-    );
 }
 
 // CBLAS constants
