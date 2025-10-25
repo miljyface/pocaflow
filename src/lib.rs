@@ -13,6 +13,7 @@ fn rust_linalg(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(operations::batch::batch_matmul, m)?)?;
     m.add_function(wrap_pyfunction!(operations::batch::batch_matmul_f32, m)?)?;
     m.add_function(wrap_pyfunction!(operations::batch::strided_batch_matmul, m)?)?;
+    m.add_function(wrap_pyfunction!(operations::batch::strided_batch_matmul_f32, m)?)?;
     
     // Vector operations
     m.add_function(wrap_pyfunction!(operations::vec_ops::dot, m)?)?;
