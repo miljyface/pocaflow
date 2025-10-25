@@ -1,22 +1,23 @@
 use ndarray::Array2;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
 use rayon::prelude::*;
 use crate::blas::{dgemm, sgemm};
-use super::{pylist_to_array2_f64, pylist_to_array2_f32, array2_to_vec};
+use super::{pylist_to_array2_f64, pylist_to_array2_f32, array2_to_vec, extract_list};
 
-/// Batch matrix multiplication (parallel)
+// parallel batch matrix multiplication for f64
 #[pyfunction]
 pub fn batch_matmul(
-    a: &PyList,
-    b: &PyList,
+    a: &PyAny,
+    b: &PyAny,
     batch_size: usize,
     m: usize,
     k: usize,
-    _n: usize,
 ) -> PyResult<Vec<Vec<Vec<f64>>>> {
-    let a_array = pylist_to_array2_f64(a)?;
-    let b_array = pylist_to_array2_f64(b)?;
+    let a_list = extract_list(a)?;
+    let b_list = extract_list(b)?;
+    
+    let a_array = pylist_to_array2_f64(a_list)?;
+    let b_array = pylist_to_array2_f64(b_list)?;
     
     // Validate dimensions
     if a_array.nrows() != batch_size * m {
@@ -42,18 +43,19 @@ pub fn batch_matmul(
         .collect())
 }
 
-/// Batch matrix multiplication (f32, parallel)
 #[pyfunction]
 pub fn batch_matmul_f32(
-    a: &PyList,
-    b: &PyList,
+    a: &PyAny,
+    b: &PyAny,
     batch_size: usize,
     m: usize,
     k: usize,
-    _n: usize,
 ) -> PyResult<Vec<Vec<Vec<f32>>>> {
-    let a_array = pylist_to_array2_f32(a)?;
-    let b_array = pylist_to_array2_f32(b)?;
+    let a_list = extract_list(a)?;
+    let b_list = extract_list(b)?;
+    
+    let a_array = pylist_to_array2_f32(a_list)?;
+    let b_array = pylist_to_array2_f32(b_list)?;
     
     if a_array.nrows() != batch_size * m {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
@@ -78,18 +80,18 @@ pub fn batch_matmul_f32(
         .collect())
 }
 
-/// Strided batch matrix multiplication (shared B matrix, parallel)
 #[pyfunction]
 pub fn strided_batch_matmul(
-    a: &PyList,
-    b: &PyList,
+    a: &PyAny,
+    b: &PyAny,
     batch_size: usize,
     m: usize,
-    _k: usize,
-    _n: usize,
 ) -> PyResult<Vec<Vec<Vec<f64>>>> {
-    let a_array = pylist_to_array2_f64(a)?;
-    let b_array = pylist_to_array2_f64(b)?;
+    let a_list = extract_list(a)?;
+    let b_list = extract_list(b)?;
+    
+    let a_array = pylist_to_array2_f64(a_list)?;
+    let b_array = pylist_to_array2_f64(b_list)?;
     
     if a_array.nrows() != batch_size * m {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(
@@ -113,18 +115,18 @@ pub fn strided_batch_matmul(
         .collect())
 }
 
-/// Strided batch matrix multiplication (f32, shared B matrix, parallel)
 #[pyfunction]
 pub fn strided_batch_matmul_f32(
-    a: &PyList,
-    b: &PyList,
+    a: &PyAny,
+    b: &PyAny,
     batch_size: usize,
     m: usize,
-    _k: usize,
-    _n: usize,
 ) -> PyResult<Vec<Vec<Vec<f32>>>> {
-    let a_array = pylist_to_array2_f32(a)?;
-    let b_array = pylist_to_array2_f32(b)?;
+    let a_list = extract_list(a)?;
+    let b_list = extract_list(b)?;
+    
+    let a_array = pylist_to_array2_f32(a_list)?;
+    let b_array = pylist_to_array2_f32(b_list)?;
     
     if a_array.nrows() != batch_size * m {
         return Err(pyo3::exceptions::PyValueError::new_err(format!(

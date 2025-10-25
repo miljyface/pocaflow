@@ -8,18 +8,18 @@ use crate::utils::{
     validate_nonzero_magnitude_f32
 };
 
-/// Helper to extract list data from Tensor or direct list
+/// f64 extraction helper
 fn extract_vec_f64(obj: &PyAny) -> PyResult<Vec<f64>> {
-    // Try to get .data attribute first (for Tensor objects)
+    // try to get .data attribute first for tensors
     if let Ok(data) = obj.getattr("data") {
         data.extract::<&PyList>()?.extract()
     } else {
-        // Fallback to direct extraction (for plain lists)
+        // fallback
         obj.extract::<&PyList>()?.extract()
     }
 }
 
-/// Helper to extract list data from Tensor or direct list (f32)
+// f32 extraction helper
 fn extract_vec_f32(obj: &PyAny) -> PyResult<Vec<f32>> {
     if let Ok(data) = obj.getattr("data") {
         data.extract::<&PyList>()?.extract()

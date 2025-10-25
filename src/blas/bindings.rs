@@ -1,4 +1,6 @@
 // Platform-specific BLAS bindings
+// Thank you ChatGPT
+
 #[cfg(target_os = "macos")]
 #[link(name = "Accelerate", kind = "framework")]
 extern "C" {

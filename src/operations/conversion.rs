@@ -2,7 +2,17 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 use ndarray::Array2;
 
-/// Convert Python nested list to Array2<f64>
+pub fn extract_list(obj: &PyAny) -> PyResult<&PyList> {
+    // try to get .data attribute first from tensors
+    if let Ok(data) = obj.getattr("data") {
+        data.extract()
+    } else {
+        // fallback
+        obj.extract()
+    }
+}
+
+// convert nested list structure to f64 array2
 pub fn pylist_to_array2_f64(list: &PyList) -> PyResult<Array2<f64>> {
     let mut rows = Vec::new();
     let mut ncols = 0;
@@ -24,7 +34,7 @@ pub fn pylist_to_array2_f64(list: &PyList) -> PyResult<Array2<f64>> {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
-/// Convert Python nested list to Array2<f32>
+// same thing for f32 array2
 pub fn pylist_to_array2_f32(list: &PyList) -> PyResult<Array2<f32>> {
     let mut rows = Vec::new();
     let mut ncols = 0;
@@ -46,7 +56,7 @@ pub fn pylist_to_array2_f32(list: &PyList) -> PyResult<Array2<f32>> {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
 }
 
-/// Convert Array2 to nested Vec
+// convert back to vec
 pub fn array2_to_vec<T: Clone>(arr: Array2<T>) -> Vec<Vec<T>> {
     arr.outer_iter()
         .map(|row| row.to_vec())
