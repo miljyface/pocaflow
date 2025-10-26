@@ -1,11 +1,11 @@
-# Minimal-dependency Linear Algebra (rust_linalg)
+# Minimal-dependency Linear Algebra (mathcube)
 
 This is my personal playground for learning and building high-performance, low-level linear algebra in **Rust**, designed for speed, low dependencies, and compatibility with Python, running natively on Apple ARM64 (M1/M2/M3/MacBook Air, etc).
 
 ## Project Goals
 
-- **Minimal dependencies**: Use only stable, essential crates. No bloat—fastest build times, smallest footprint.
-- **Blazing speed**: Leverage Apple Accelerate, BLAS, and custom cache-blocked and parallel routines to approach or beat NumPy/Torch for real matrix math—especially on ARM64.
+- **Minimal dependencies**
+- **Speed**: Leverage Apple Accelerate, BLAS, and custom cache-blocked and parallel routines to approach or beat NumPy/Torch for real matrix math—especially on ARM64.
 - **Python interop**: Export core operations as Python bindings with [PyO3](https://pyo3.rs/), making it easy to drop-in as a NumPy accelerator.
 - **Educational**: Code is written for clarity and control. Great for learning linalg, memory layout, and systems-level performance.
 
@@ -22,7 +22,7 @@ This is my personal playground for learning and building high-performance, low-l
 ### From Python
 
 ```python
-import rust_linalg as rs
+import mathcube as rs
 import numpy as np
 
 a = np.random.rand(2048, 2048)
@@ -34,7 +34,7 @@ print(c.shape)
 ### From Rust
 
 ```rust
-use rust_linalg::matmul;
+use mathcube::matmul;
 let a = ndarray::Array2::<f64>::ones((2048, 2048));
 let b = ndarray::Array2::<f64>::ones((2048, 2048));
 let c = matmul(a.view(), b.view());
@@ -51,7 +51,7 @@ let c = matmul(a.view(), b.view());
 
 ## Roadmap
 
-- CUDA/Metal backend for GPU acceleration (and auto-detection).
+- CUDA/Metal backend for GPU acceleration (and auto-detection). (Done)
 - More batched/parallel ops (e.g. broadcasting, batched dot/cross for 3D graphics).
 - Deeper integration: autodiff, sparse/blending, machine learning stubs.
 

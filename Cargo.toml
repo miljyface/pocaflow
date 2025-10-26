@@ -1,16 +1,24 @@
 [package]
-name = "rust_linalg"
+name = "mathcube"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "rust_linalg"
+name = "mathcube"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "0.20", features = ["extension-module"] }
+objc2 = "0.5"
+objc2-foundation = "0.2"
+core-foundation = "0.9"
+metal = "0.27"
+ndarray = "0.15"
 numpy = "0.20"
-rayon = "1.5"
-ndarray = { version = "0.15", features = ["rayon"] }
+pyo3 = { version = "0.20", features = ["extension-module"] }
+rayon = "1.7"
+cocoa = "0.25"
+libc = "0.2"
 
-
+[features]
+default = ["metal-gpu"]
+metal-gpu = []  # Enable Metal GPU acceleration on macOS

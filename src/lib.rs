@@ -5,27 +5,45 @@ mod blas;
 mod operations;
 mod utils;
 
-#[pymodule]
-fn rust_linalg(_py: Python, m: &PyModule) -> PyResult<()> {
+#[cfg(target_os = "macos")]
+mod gpu;
 
-    // Matrix operations
+#[pymodule]
+fn mathcube(_py: Python, m: &PyModule) -> PyResult<()> {
+
+    #[cfg(target_os = "macos")]
     m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;
-    m.add_function(wrap_pyfunction!(operations::matmul::matmul_f32, m)?)?;
+    
+    m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;
     m.add_function(wrap_pyfunction!(operations::matmul::matmul_f64, m)?)?;
+    m.add_function(wrap_pyfunction!(operations::matmul::matmul_f32_cpu, m)?)?;
+    
     m.add_function(wrap_pyfunction!(operations::batch::batch_matmul_f32, m)?)?;
     m.add_function(wrap_pyfunction!(operations::batch::batch_matmul_f64, m)?)?;
 
-    // Strassen Algo
-    m.add_function(wrap_pyfunction!(operations::experimental::strassen::strassen_matmul, m)?)?;
-    m.add_function(wrap_pyfunction!(operations::experimental::strassen::strassen_matmul_f32, m)?)?;
-    m.add_function(wrap_pyfunction!(operations::experimental::strassen::strassen_matmul_f64, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        operations::experimental::strassen::strassen_matmul,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        operations::experimental::strassen::strassen_matmul_f32,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        operations::experimental::strassen::strassen_matmul_f64,
+        m
+    )?)?;
     
-    // Vector operations
+    #[cfg(target_os = "macos")]
+    m.add_function(wrap_pyfunction!(
+        operations::experimental::metal_matmul::metal_matmul_f32,
+        m
+    )?)?;
+
     m.add_function(wrap_pyfunction!(operations::vec_ops::dot, m)?)?;
     m.add_function(wrap_pyfunction!(operations::vec_ops::cross, m)?)?;
     m.add_function(wrap_pyfunction!(operations::vec_ops::magnitude, m)?)?;
     m.add_function(wrap_pyfunction!(operations::vec_ops::normalize, m)?)?;
-    
+
     Ok(())
 }
-
