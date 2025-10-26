@@ -231,22 +231,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mathcube"
-version = "0.1.0"
-dependencies = [
- "cocoa",
- "core-foundation",
- "libc",
- "metal",
- "ndarray",
- "numpy",
- "objc2",
- "objc2-foundation",
- "pyo3",
- "rayon",
-]
-
-[[package]]
 name = "matrixmultiply"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -422,6 +406,22 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pocaflow"
+version = "0.1.0"
+dependencies = [
+ "cocoa",
+ "core-foundation",
+ "libc",
+ "metal",
+ "ndarray",
+ "numpy",
+ "objc2",
+ "objc2-foundation",
+ "pyo3",
+ "rayon",
+]
 
 [[package]]
 name = "portable-atomic"

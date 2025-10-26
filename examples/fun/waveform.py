@@ -1,5 +1,5 @@
 import numpy as np
-import mathcube as rs
+import pocaflow as rs
 import time
 import os
 
@@ -12,27 +12,15 @@ WIDTH, HEIGHT = 80, 24
 
 
 def generate_wave(t, freq_matrix):
-    """Generate wave using GPU matrix multiplication."""
-    # Time vector (1 x N)
     time_vec = np.linspace(0, 2*np.pi, WIDTH).reshape(1, -1).astype(np.float32)
-    
-    # Frequency matrix (M x 1)
     frequencies = np.array([[freq] for freq in freq_matrix], dtype=np.float32)
-    
-    # GPU matmul: (M x 1) @ (1 x N) = (M x N)
     phase_matrix = rs.matmul(frequencies, time_vec)
-    
-    # Sum waves with phase shift
     wave = np.sum(np.sin(phase_matrix + t), axis=0)
-    
     return wave
 
 
 def render_waveform(wave):
-    """Render waveform to ASCII."""
     screen = [[' ' for _ in range(WIDTH)] for _ in range(HEIGHT)]
-    
-    # Normalize wave to screen height
     wave_normalized = ((wave - wave.min()) / (wave.max() - wave.min())) * (HEIGHT - 1)
     
     for x, y_val in enumerate(wave_normalized):
@@ -46,7 +34,7 @@ def render_waveform(wave):
 
 def main():
     t = 0.0
-    frequencies = [1.0, 2.0, 3.5, 5.0]  # Harmonic frequencies
+    frequencies = [1.0, 2.0, 3.5, 5.0]
     
     try:
         while True:

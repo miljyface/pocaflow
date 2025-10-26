@@ -9,7 +9,7 @@ mod utils;
 mod gpu;
 
 #[pymodule]
-fn mathcube(_py: Python, m: &PyModule) -> PyResult<()> {
+fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
 
     #[cfg(target_os = "macos")]
     m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;

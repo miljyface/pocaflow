@@ -1,5 +1,5 @@
 import numpy as np
-import mathcube as rs
+import pocaflow as rs
 import time
 import os
 
@@ -37,7 +37,6 @@ SCREEN_HEIGHT = 30
 
 
 def rotation_matrix(rx, ry, rz):
-    """Build combined rotation matrix (f64)"""
     Rx = np.array([
         [1, 0, 0],
         [0, np.cos(rx), -np.sin(rx)],
@@ -73,7 +72,6 @@ def perspective_project(point, fov=5.0):
 
 
 def bresenham_line(screen, x0, y0, x1, y1):
-    """Bresenham line algorithm"""
     dx = abs(x1 - x0)
     dy = abs(y1 - y0)
     sx = 1 if x0 < x1 else -1
@@ -98,7 +96,6 @@ def bresenham_line(screen, x0, y0, x1, y1):
 
 
 def render_cube(transformed_points, screen):
-    """Render cube to screen"""
     for a, b in EDGES:
         pt_a = transformed_points[a]
         pt_b = transformed_points[b]
@@ -110,7 +107,6 @@ def render_cube(transformed_points, screen):
 
 
 def main():
-    """Main loop"""
     rx, ry, rz = 0.0, 0.0, 0.0
     frame = 0
     start_time = time.time()
@@ -138,7 +134,7 @@ def main():
             fps = frame / elapsed if elapsed > 0 else 0
             
             print("\n" + "="*80)
-            print(f"GPU-Accelerated Spinning Cube")
+            print(f"Spinning Cube")
             print(f"Frame: {frame} | FPS: {fps:.1f} | Ctrl+C to exit")
             print("="*80)
             
