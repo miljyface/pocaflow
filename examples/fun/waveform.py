@@ -14,13 +14,13 @@ WIDTH, HEIGHT = 80, 24
 def generate_wave(t, freq_matrix):
     """Generate wave using GPU matrix multiplication."""
     # Time vector (1 x N)
-    time_vec = np.linspace(0, 2*np.pi, WIDTH).reshape(1, -1).astype(np.float64)
+    time_vec = np.linspace(0, 2*np.pi, WIDTH).reshape(1, -1).astype(np.float32)
     
     # Frequency matrix (M x 1)
-    frequencies = np.array([[freq] for freq in freq_matrix], dtype=np.float64)
+    frequencies = np.array([[freq] for freq in freq_matrix], dtype=np.float32)
     
     # GPU matmul: (M x 1) @ (1 x N) = (M x N)
-    phase_matrix = rs.matmul_f64(frequencies, time_vec)
+    phase_matrix = rs.matmul(frequencies, time_vec)
     
     # Sum waves with phase shift
     wave = np.sum(np.sin(phase_matrix + t), axis=0)

@@ -18,7 +18,7 @@ CUBE = np.array([
     [ 1, -1,  1],
     [ 1,  1, -1],
     [ 1,  1,  1]
-], dtype=np.float64) *0.5
+], dtype=np.float32) *0.5
 
 
 # cube edges
@@ -42,27 +42,26 @@ def rotation_matrix(rx, ry, rz):
         [1, 0, 0],
         [0, np.cos(rx), -np.sin(rx)],
         [0, np.sin(rx), np.cos(rx)]
-    ], dtype=np.float64)
+    ], dtype=np.float32)
     
     Ry = np.array([
         [np.cos(ry), 0, np.sin(ry)],
         [0, 1, 0],
         [-np.sin(ry), 0, np.cos(ry)]
-    ], dtype=np.float64)
+    ], dtype=np.float32)
     
     Rz = np.array([
         [np.cos(rz), -np.sin(rz), 0],
         [np.sin(rz), np.cos(rz), 0],
         [0, 0, 1]
-    ], dtype=np.float64)
+    ], dtype=np.float32)
     
-    temp = rs.matmul_f64(Ry, Rx)
-    rot = rs.matmul_f64(Rz, temp)
+    temp = rs.matmul(Ry, Rx)
+    rot = rs.matmul(Rz, temp)
     return rot
 
 
 def perspective_project(point, fov=5.0):
-    """Project 3D to 2D"""
     x, y, z = point
     z = max(z, -fov + 0.5)
     f = fov / (fov + z)
@@ -123,7 +122,7 @@ def main():
             screen = [[' ' for _ in range(SCREEN_WIDTH)] for _ in range(SCREEN_HEIGHT)]
             
             rot = rotation_matrix(rx, ry, rz)
-            transformed = rs.matmul_f64(CUBE, rot)
+            transformed = rs.matmul(CUBE, rot)
             
             render_cube(transformed, screen)
             
