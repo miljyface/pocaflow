@@ -1,109 +1,116 @@
 import time
 import numpy as np
-
 import rust_linalg as rs
+import torch
 
-try:
-    import torch
-    TORCH_AVAILABLE = True
-except ImportError:
-    TORCH_AVAILABLE = False
-
-def bench(func, n, iters):
+def benchmark_function(func, warmup=3, iterations=10):
+    for _ in range(warmup):
+        func()
     times = []
-    for _ in range(iters):
-        times.append(func(n))
-    return np.mean(times) * 1000  # ms
+    for _ in range(iterations):
+        times.append(func())
+    times_ms = np.array(times) * 1000
+    return {
+        'mean': np.mean(times_ms),
+        'std': np.std(times_ms),
+        'min': np.min(times_ms),
+        'max': np.max(times_ms)
+    }
 
-def benchmark_rs(n=1024):
+def benchmark_rust_blas(n=2048):
     a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float64)
     b = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float64)
-    _ = rs.matmul(a, b) # warmup
-    start = time.time()
-    _ = rs.matmul(a, b)
-    return time.time() - start
+    def _run():
+        start = time.perf_counter()
+        _ = rs.matmul(a, b)
+        return time.perf_counter() - start
+    return benchmark_function(_run)
 
-def benchmark_numpy(n=1024):
+def benchmark_rust_strassen(n=2048):
+    a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float64)
+    b = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float64)
+    def _run():
+        start = time.perf_counter()
+        _ = rs.strassen_matmul(a, b)
+        return time.perf_counter() - start
+    return benchmark_function(_run)
+
+def benchmark_numpy(n=2048):
     a = np.random.rand(n, n)
     b = np.random.rand(n, n)
-    _ = np.dot(a, b) # warmup
-    start = time.time()
-    _ = np.dot(a, b)
-    return time.time() - start
+    def _run():
+        start = time.perf_counter()
+        _ = np.dot(a, b)
+        return time.perf_counter() - start
+    return benchmark_function(_run)
 
-def benchmark_torch_cpu(n=1024):
-    a = torch.randn((n, n), device="cpu")
-    b = torch.randn((n, n), device="cpu")
-    _ = torch.matmul(a, b)
-    start = time.time()
-    _ = torch.matmul(a, b)
-    return time.time() - start
+def benchmark_torch_cpu(n=2048):
+    a = torch.randn(n, n, dtype=torch.float64, device="cpu")
+    b = torch.randn(n, n, dtype=torch.float64, device="cpu")
+    def _run():
+        start = time.perf_counter()
+        _ = torch.matmul(a, b)
+        return time.perf_counter() - start
+    return benchmark_function(_run)
 
-def benchmark_torch_mps(n=1024):
-    a = torch.randn((n, n), device="mps")
-    b = torch.randn((n, n), device="mps")
-    _ = torch.matmul(a, b)
-    torch.mps.synchronize()
-    start = time.time()
-    _ = torch.matmul(a, b)
-    torch.mps.synchronize()
-    return time.time() - start
+def format_speedup(baseline, current):
+    if current <= 0:
+        return "N/A"
+    ratio = baseline / current
+    if ratio >= 1.0:
+        return f"{ratio:>6.2f}x faster"
+    else:
+        return f"{1/ratio:>6.2f}x slower"
 
-def main():
-    n = 2048     # matrix size (change as needed)
-    iters = 10   # number of iterations for averaging
-    print("-"*70)
-    print("Implementation      Time (ms)      Speedup vs NumPy")
-    print("-"*70)
-
+def test():
+    n = int(input("Square Matrix Dimensions:"))
+    warmup = 3
+    iterations = 5
+    
+    print("="*80)
+    print(f"Matrix Multiplication Benchmark: ({n}×{n}) @ ({n}×{n})")
+    print(f"Warmup: {warmup}, Iterations: {iterations}")
+    print("="*80)
+    print()
+    
     results = {}
-
-    rust_time = bench(benchmark_rs, n, iters)
-    results['rust_pure'] = rust_time
-
-    # Numpy
-    numpy_time = bench(benchmark_numpy, n, iters)
-    results['numpy'] = numpy_time
-
-    # Torch CPU
-    torch_cpu_time = None
-    if TORCH_AVAILABLE:
-        torch_cpu_time = bench(benchmark_torch_cpu, n, iters)
-        results['torch_cpu'] = torch_cpu_time
-
-    # Torch MPS
-    torch_mps_time = None
-    if TORCH_AVAILABLE:
-        try:
-            torch.ones(1, device="mps")
-            torch_mps_time = bench(benchmark_torch_mps, n, iters)
-            results['torch_mps'] = torch_mps_time
-        except Exception:
-            torch_mps_time = None
-
-    implementations = [
-        ("rust_pure", results.get("rust_pure")),
-        ("torch_cpu", results.get("torch_cpu")),
-        ("numpy", results.get("numpy")),
-        ("torch_mps", results.get("torch_mps")),
-    ]
-
-    numpy_ref = results["numpy"]
-
-    for (name, t) in implementations:
-        if t is None:
+    
+    print("Benchmarking Rust BLAS...")
+    results['rust_blas'] = benchmark_rust_blas(n)
+    
+    print("Benchmarking Rust Strassen...")
+    results['rust_strassen'] = benchmark_rust_strassen(n)
+    
+    print("Benchmarking NumPy...")
+    results['numpy'] = benchmark_numpy(n)
+    
+    print("Benchmarking PyTorch (CPU)...")
+    results['torch_cpu'] = benchmark_torch_cpu(n)
+    
+    print()
+    print("-"*80)
+    print(f"{'Implementation':<20} {'Mean (ms)':<12} {'Std (ms)':<12} {'vs NumPy':<15}")
+    print("-"*80)
+    
+    numpy_mean = results['numpy']['mean']
+    order = ['rust_blas', 'rust_strassen', 'numpy', 'torch_cpu']
+    
+    for name in order:
+        if name not in results:
             continue
-        speedup = numpy_ref / t if t > 0 else float('inf')
-        if name == "numpy":
-            print(f"{name:<18}{t:9.4f} ms   {speedup:>7.2f}x slower")
-        elif speedup > 1:
-            print(f"{name:<18}{t:9.4f} ms   {speedup:>7.2f}x faster")
-        else:
-            print(f"{name:<18}{t:9.4f} ms   {1/speedup:>7.2f}x slower")
+        r = results[name]
+        speedup_str = format_speedup(numpy_mean, r['mean'])
+        print(f"{name:<20} {r['mean']:>10.4f}   {r['std']:>10.4f}   {speedup_str}")
+    
+    print("-"*80)
+    print()
+    print("Detailed Statistics:")
+    print("-"*80)
+    for name in order:
+        if name not in results:
+            continue
+        r = results[name]
+        print(f"{name:<20} Min: {r['min']:>8.4f} ms  Max: {r['max']:>8.4f} ms")
+    print("="*80)
 
-    print("\n" + "-"*70)
-    print(f"Matrix size: A({n}x{n}) @ B({n}x{n}) = C({n}x{n})")
-    print(f"Iterations: {iters}")
-    print("-"*70)
-
-main()
+test()
