@@ -84,7 +84,7 @@ def bresenham_line(screen, x0, y0, x1, y1):
     x, y = x0, y0
     while True:
         if 0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT:
-            screen[y][x] = '#'
+            screen[y][x] = '.'
         
         if x == x1 and y == y1:
             break

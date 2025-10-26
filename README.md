@@ -57,4 +57,4 @@ let c = matmul(a.view(), b.view());
 
 ## Contributing & Feedback
 
-This project is **experimental. Issues, PRs, and wild ideas are welcome.
+This project is **experimental**. Issues, PRs, and wild ideas are welcome.
