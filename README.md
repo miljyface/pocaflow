@@ -22,7 +22,7 @@ This is my personal playground for learning and building high-performance, low-l
 ### From Python
 
 ```python
-import mathcube as rs
+import pocaflow as rs
 import numpy as np
 
 a = np.random.rand(2048, 2048)
@@ -34,7 +34,7 @@ print(c.shape)
 ### From Rust
 
 ```rust
-use mathcube::matmul;
+use pocaflow::matmul;
 let a = ndarray::Array2::<f64>::ones((2048, 2048));
 let b = ndarray::Array2::<f64>::ones((2048, 2048));
 let c = matmul(a.view(), b.view());
