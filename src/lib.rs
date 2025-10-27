@@ -5,9 +5,6 @@ mod blas;
 mod operations;
 mod utils;
 
-#[cfg(target_os = "linux")]
-use crate::operations::experimental::cuda_matmul::cuda_matmul_f32;
-
 mod gpu;
 
 #[pymodule]
@@ -20,7 +17,7 @@ fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
     #[cfg(target_os = "macos")]
     m.add_function(wrap_pyfunction!(operations::experimental::metal_matmul::metal_matmul_f32,m)?)?;
 
-    #[cfg(target_os = "linux")]
+    #[cfg(not(target_os = "macos"))]
     m.add_function(wrap_pyfunction!(operations::experimental::cuda_matmul::cuda_matmul_f32,m)?)?;
 
     m.add_function(wrap_pyfunction!(operations::vec_ops::dot, m)?)?;
