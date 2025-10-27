@@ -12,76 +12,41 @@ class MatmulBackend:
         for _ in range(warmup):
             try:
                 self.runner(a, b)
-            except Exception:
+            except Exception as e:
+                print(f"WARMUP ERROR in {self.name}: {e}")
                 return None
         times = []
         for _ in range(iterations):
-            t0 = time.perf_counter()
-            c = self.runner(a, b)
-            t1 = time.perf_counter()
-            times.append((t1 - t0) * 1000)
-        stat = np.array(times)
-        result = {
-            "mean": np.mean(stat),
-            "std": np.std(stat),
-            "min": np.min(stat),
-            "max": np.max(stat),
-        }
-        return result
+            try:
+                t0 = time.perf_counter()
+                c = self.runner(a, b)
+                t1 = time.perf_counter()
+                times.append((t1 - t0) * 1000)
+            except Exception as e:
+                print(f"RUN ERROR in {self.name}: {e}")
+                return None
+        return {"mean": np.mean(times)}
 
 def get_backends():
-    backends = []
-    # Rust GPU/Metal/CUDA generic entrypoint
-    backends.append(MatmulBackend("Rust GPU/Metal/CUDA (rs.matmul)", lambda a, b: rs.matmul(a, b)))
-    # PyTorch CUDA/MPS
+    backends = [MatmulBackend("Rust GPU (rs.matmul)", lambda a, b: rs.cuda_matmul_f32(a, b))]
     if torch.cuda.is_available():
-        backends.append(MatmulBackend("PyTorch CUDA (torch.matmul)", lambda a, b: torch.matmul(
+        backends.append(MatmulBackend("PyTorch CUDA", lambda a, b: torch.matmul(
             torch.from_numpy(a).to("cuda"),
             torch.from_numpy(b).to("cuda")
-        ).cpu().numpy()))
-    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        backends.append(MatmulBackend("PyTorch MPS (torch.matmul)", lambda a, b: torch.matmul(
-            torch.from_numpy(a).to("mps"),
-            torch.from_numpy(b).to("mps")
         ).cpu().numpy()))
     return backends
 
 def main():
-    print("=== Matrix Multiplication Benchmark (GPU only) ===")
-    sizes = [256, 512, 1024, 2048, 4096]
-    iterations = 10
-    warmup = 3
-    dtype = np.float32
-
-    backend_results = {}
-    backends = get_backends()
-    for backend in backends:
-        backend_results[backend.name] = {"sizes": [], "means": []}
+    print("=== Matrix Multiplication Benchmark ===")
+    sizes = [256, 512, 1024, 2048]
     for n in sizes:
-        print(f"\n=== Benchmarking size {n}x{n} ===")
-        a = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
-        b = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
-        for backend in backends:
-            print(f" {backend.name}...", end="", flush=True)
-            result = backend.bench(a, b, iterations=iterations, warmup=warmup)
+        print(f"\n=== Size {n}x{n} ===")
+        a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
+        b = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
+        for backend in get_backends():
+            result = backend.bench(a, b)
             if result:
-                backend_results[backend.name]["sizes"].append(n)
-                backend_results[backend.name]["means"].append(result["mean"])
-                print(f" {result['mean']:.2f} ms")
-            else:
-                backend_results[backend.name]["sizes"].append(n)
-                backend_results[backend.name]["means"].append(np.nan)
-                print(f" (skipped)")
+                print(f" {backend.name}: {result['mean']:.2f} ms")
 
-    print("\n==== Results Table (mean ms per run) ====")
-    header = ["Size"] + [name for name in backend_results]
-    print(" | ".join(f"{h:>24}" for h in header))
-    print("-" * (26 * len(header)))
-    for idx, n in enumerate(sizes):
-        row = [f"{n:>24}"]
-        for name in backend_results:
-            mean = backend_results[name]["means"][idx]
-            row.append(f"{mean:>24.2f}")
-        print(" | ".join(row))
-
-main()
+if __name__ == "__main__":
+    main()
