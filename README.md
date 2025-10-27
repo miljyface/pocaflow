@@ -53,9 +53,9 @@ let c = matmul(a.view(), b.view());
 
 ## Roadmap
 
-- CUDA/Metal backend for GPU acceleration (and auto-detection). (Done)
 - More batched/parallel ops (e.g. broadcasting, batched dot/cross for 3D graphics).
 - Deeper integration: autodiff, sparse/blending, machine learning stubs.
+- Accessible ML Framework
 
 ## Contributing & Feedback
 
