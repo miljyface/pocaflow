@@ -49,7 +49,7 @@ let c = matmul(a.view(), b.view());
 - I don't like C.
 - I still had to use C for metal.
 - I'll probably have to use it again for CUDA
-- Fuck my life..
+- Fuck my life
 
 ## Roadmap
 
@@ -59,4 +59,4 @@ let c = matmul(a.view(), b.view());
 
 ## Contributing & Feedback
 
-This project is **experimental**. Issues, PRs, and wild ideas are welcome.
+This project is **experimental**. Issues, PRs, and ideas are welcome.

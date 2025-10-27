@@ -5,6 +5,12 @@ use crate::blas::{CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, cblas_dgemm, cblas_sgemm};
 #[cfg(target_os = "macos")]
 use super::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
 
+#[cfg(target_os = "linux")]
+use super::experimental::metal_matmul::cuda_matmul_f32 as gpu_matmul_f32;
+
+#[cfg(target_os = "windows")]
+use super::experimental::metal_matmul::cuda_matmul_f32 as gpu_matmul_f32;
+
 
 // default matmul is gpu f32 
 #[pyfunction]
@@ -13,15 +19,7 @@ pub fn matmul<'py>(
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
-    #[cfg(target_os = "macos")]
-    {
         gpu_matmul_f32(py, a, b)
-    }
-    
-    #[cfg(not(target_os = "macos"))]
-    {
-        matmul_f32_cpu(py, a, b)
-    }
 }
 
 // force use cpu
