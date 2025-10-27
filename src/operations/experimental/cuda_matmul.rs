@@ -18,9 +18,6 @@ pub fn cuda_matmul_f32<'py>(
     let ctx = CudaContext::new();
     let a_owned = a_arr.to_owned();
     let b_owned = b_arr.to_owned();
-    // If you want to allow GIL-released execution for long GPU runs:
-    let result = py.allow_threads(|| {
-        ctx.matmul_f32(&a_owned, &b_owned)
-    });
+    let result = ctx.matmul_f32(&a_owned, &b_owned);
     Ok(PyArray2::from_owned_array(py, result))
 }
