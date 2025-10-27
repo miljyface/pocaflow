@@ -18,13 +18,12 @@ macro_rules! cublas_check {
     }};
 }
 
-use cublas_sys::{cublasHandle_t, cublasCreate_v2, cublasDestroy_v2, cublasSgemm_v2};
-use cublas_sys::Enum_Unnamed5;
+use cublas_sys::{cublasHandle_t, cublasCreate_v2, cublasDestroy_v2, cublasSetStream_v2, cublasSgemm_v2, Enum_Unnamed5};
 use cuda_sys::cuda::{
     CUcontext, CUdevice, CUstream, CUdeviceptr, cuInit, cuDeviceGet,
     cuCtxCreate_v2, cuStreamCreate, cuMemAlloc_v2, cuMemcpyHtoDAsync_v2,
     cuMemcpyDtoHAsync_v2, cuStreamSynchronize, cuStreamDestroy_v2,
-    cuMemFree_v2, cuCtxDestroy_v2, cublasSetStream_v2
+    cuMemFree_v2, cuCtxDestroy_v2
 };
 use std::ptr;
 use ndarray::Array2;
