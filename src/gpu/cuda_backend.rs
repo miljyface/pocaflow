@@ -32,12 +32,11 @@ macro_rules! cublas_check {
     };
 }
 
-// --- Imports; full module path is required for FFI types/enums ---
 use cublas_sys::{
     cublasHandle_t,
     cublasCreate_v2, cublasDestroy_v2,
     cublasSetStream_v2,
-    cublasSgemm_v2, // use "_v2" variant if "cublasSgemm" not available
+    cublasSgemm_v2,
 };
 use cublas_sys::Enum_Unnamed5; // for CUBLAS_OP_N
 
@@ -50,7 +49,6 @@ use cuda_sys::cuda::{
 use std::ptr;
 use ndarray::Array2;
 
-// ---- CUDA Context struct ----
 pub struct CudaContext {
     pub ctx: CUcontext,
     pub handle: cublasHandle_t,
@@ -76,7 +74,6 @@ impl CudaContext {
 
             let mut stream = ptr::null_mut();
             cuda_check!(cuStreamCreate(&mut stream, 0));
-            // use proper cast for cublas stream type (as per generated bindings)
             cublas_check!(cublasSetStream_v2(handle, stream as _));
 
             let max_elements = 16384 * 16384;
@@ -128,13 +125,12 @@ impl CudaContext {
 
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
-            // Call correct cublas sgemm function, and ensure "as _" to cast types if needed
             cublas_check!(cublasSgemm_v2(
                 self.handle,
                 Enum_Unnamed5::CUBLAS_OP_N,
                 Enum_Unnamed5::CUBLAS_OP_N,
-                n as i32, // rows of output
-                m as i32, // cols of output
+                n as i32,
+                m as i32,
                 k as i32,
                 &alpha as *const f32,
                 self.buffer_b as *const f32, n as i32,
