@@ -3,7 +3,7 @@ mod operations;
 
 // src/blas/mod.rs
 #[cfg(target_os = "macos")]
-pub use bindings::{CBLAS_ROW_MAJOR, CBLAS_NO_TRANS, cblas_dgemm, cblas_sgemm, cblas_daxpy, cblas_saxpy};
+pub use operations::{dgemm, sgemm};
 #[cfg(not(target_os = "macos"))]
 // On linux, import from openblas or manually declare stubs/erroring items.
 

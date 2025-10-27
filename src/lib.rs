@@ -17,23 +17,7 @@ fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;
     m.add_function(wrap_pyfunction!(operations::matmul::matmul_f64, m)?)?;
     m.add_function(wrap_pyfunction!(operations::matmul::matmul_f32_cpu, m)?)?;
-    
-    m.add_function(wrap_pyfunction!(operations::batch::batch_matmul_f32, m)?)?;
-    m.add_function(wrap_pyfunction!(operations::batch::batch_matmul_f64, m)?)?;
 
-    m.add_function(wrap_pyfunction!(
-        operations::experimental::strassen::strassen_matmul,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        operations::experimental::strassen::strassen_matmul_f32,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        operations::experimental::strassen::strassen_matmul_f64,
-        m
-    )?)?;
-    
     #[cfg(target_os = "macos")]
     m.add_function(wrap_pyfunction!(
         operations::experimental::metal_matmul::metal_matmul_f32,
