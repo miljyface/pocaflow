@@ -24,7 +24,7 @@ MPS_AVAILABLE = TORCH_AVAILABLE and hasattr(torch.backends, "mps") and torch.bac
 METAL_AVAILABLE = hasattr_mod(rs, 'metal_matmul_f32')
 
 PYTORCH_CUDA_AVAILABLE = TORCH_AVAILABLE and torch.cuda.is_available()
-RUST_CUDA_AVAILABLE = hasattr_mod(rs, 'cuda_matmul_f32')
+RUST_CUDA_AVAILABLE = hasattr_mod(rs, 'matmul')
 RUST_MATMUL_AVAILABLE = hasattr_mod(rs, 'matmul')
 
 class MatmulBackend:
