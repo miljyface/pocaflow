@@ -5,7 +5,6 @@ use crate::blas::{dgemm, sgemm};
 #[cfg(target_os = "macos")]
 use crate::operations::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
 
-// Only use CUDA backend if feature "cuda" is enabled and non-macOS.
 #[cfg(not(target_os = "macos"))]
 use crate::operations::experimental::cuda_matmul::cuda_matmul_f32 as gpu_matmul_f32;
 
