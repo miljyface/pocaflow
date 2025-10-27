@@ -5,14 +5,10 @@ mod blas;
 mod operations;
 mod utils;
 
-#[cfg(target_os = "macos")]
 mod gpu;
 
 #[pymodule]
 fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
-
-    #[cfg(target_os = "macos")]
-    m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;
     
     m.add_function(wrap_pyfunction!(operations::matmul::matmul, m)?)?;
     m.add_function(wrap_pyfunction!(operations::matmul::matmul_f64, m)?)?;
