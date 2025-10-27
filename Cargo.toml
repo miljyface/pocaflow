@@ -22,7 +22,7 @@ metal = "0.27"
 cocoa = "0.25"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-cuda-sys = "0.2"
+cuda-runtime-sys = "0.3"  # Instead of cuda-sys
 cublas-sys = "0.1.0"
 
 [features]
