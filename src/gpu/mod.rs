@@ -1,7 +1,7 @@
-#[cfg(all(target_os = "macos", feature = "metal-gpu"))]
+#[cfg(target_os = "macos")]
 mod metal_backend;
 
-#[cfg(all(target_os = "macos", feature = "metal-gpu"))]
+#[cfg(target_os = "macos")]
 pub use metal_backend::MetalContext;
 
 #[cfg(not(target_os = "macos"))]
