@@ -53,9 +53,13 @@ let c = matmul(a.view(), b.view());
 
 ## Roadmap
 
-- More batched/parallel ops (e.g. broadcasting, batched dot/cross for 3D graphics).
-- Deeper integration: autodiff, sparse/blending, machine learning stubs.
-- Accessible ML Framework
+- [x] Matrix multiplication (CPU, Metal, CUDA)
+- [x] Vector operations
+- [ ] Broadcasting support
+- [ ] Sparse matrices
+- [ ] Autodifferentiation
+- [ ] Neural network primitives
+- [ ] Distributed computing support
 
 ## Contributing & Feedback
 

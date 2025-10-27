@@ -28,7 +28,7 @@ class MatmulBackend:
         return {"mean": np.mean(times)}
 
 def get_backends():
-    backends = [MatmulBackend("Rust GPU (rs.matmul)", lambda a, b: rs.cuda_matmul_f32(a, b))]
+    backends = [MatmulBackend("Rust GPU (rs.matmul)", lambda a, b: rs.matmul(a, b))]
     if torch.cuda.is_available():
         backends.append(MatmulBackend("PyTorch CUDA", lambda a, b: torch.matmul(
             torch.from_numpy(a).to("cuda"),
