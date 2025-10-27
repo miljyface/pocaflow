@@ -119,6 +119,7 @@ def main():
             
             render_cube(transformed, screen)
             
+
             for row in screen:
                 print(''.join(row))
             
