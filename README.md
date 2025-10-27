@@ -12,10 +12,9 @@ This is my personal playground for learning and building high-performance, low-l
 ## Features
 
 - Fast matrix multiplication (`matmul`), batched matmul, dot, cross, normalization, and more.
-- Optional cache-blocking/tiling for large matrices—approaching vendor BLAS speeds.
-- Drop-in Python bindings: Accept and return `numpy.ndarray` natively via PyO3.
+- Accept and return `numpy.ndarray` natively via PyO3.
 - Pure Rust fallback kernels for ARM64 platforms with or without Accelerate (optimized for your hardware).
-- Easy benchmarking and comparison against NumPy, Torch (CPU, MPS), and any BLAS backend.
+- Speed comparable to NumPy and PyTorch.
 
 ## Usage Examples
 
@@ -48,6 +47,9 @@ let c = matmul(a.view(), b.view());
 
 - Control over memory layout, cache behavior, parallelism, and vectorization.
 - I don't like C.
+- I still had to use C for metal.
+- I'll probably have to use it again for CUDA
+- Fuck my life..
 
 ## Roadmap
 

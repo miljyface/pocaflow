@@ -34,6 +34,7 @@ def render_waveform(wave):
 
 def main():
     t = 0.0
+    frame = 0
     frequencies = [1.0, 2.0, 3.5, 5.0]
     
     try:
@@ -43,16 +44,17 @@ def main():
             wave = generate_wave(t, frequencies)
             render_waveform(wave)
             
-            print("\n" + "="*80)
-            print("Waveform Visualizer | Ctrl+C to exit")
-            print("="*80)
-            
             t += 0.1
-            time.sleep(0.05)
+            frame += 1
+            fps = frame/t
+            time.sleep(0.1)
+
+            print("\n" + "="*80)
+            print(f"Waveform")
+            print(f"Frame: {frame} | FPS: {fps:.1f} | Ctrl+C to exit")
+            print("="*80)
     
     except KeyboardInterrupt:
         print("\n\nWaveform stopped!")
 
-
-if __name__ == "__main__":
-    main()
+main()

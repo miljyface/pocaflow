@@ -6,9 +6,6 @@ import os
 def clear():
     os.system("clear" if os.name != "nt" else "cls")
 
-# cube vertices f64 for precision
-# this script has to use f64 for some reason
-# probably has to do with the tiny ass 8x3 matrix losing precision
 CUBE = np.array([
     [-1, -1, -1],
     [-1, -1,  1],

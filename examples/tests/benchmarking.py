@@ -2,19 +2,12 @@ import time
 import numpy as np
 import pocaflow as rs
 import sys
-
-try:
-    import torch
-    TORCH_AVAILABLE = True
-    MPS_AVAILABLE = torch.backends.mps.is_available()
-except ImportError:
-    TORCH_AVAILABLE = False
-    MPS_AVAILABLE = False
-
+import torch
+TORCH_AVAILABLE = True
+MPS_AVAILABLE = torch.backends.mps.is_available()
 METAL_AVAILABLE = hasattr(rs, 'metal_matmul_f32')
 
 def benchmark_function(func, warmup=3, iterations=10):
-    """Run benchmark with warmup and multiple iterations."""
     for _ in range(warmup):
         try:
             func()
@@ -41,7 +34,6 @@ def benchmark_function(func, warmup=3, iterations=10):
 
 
 def benchmark_rust_cpu(n=2048):
-    """Rust CPU BLAS (Accelerate on macOS) - f32"""
     a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
     b = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
     
@@ -53,8 +45,8 @@ def benchmark_rust_cpu(n=2048):
     return benchmark_function(_run)
 
 
+# WARNING: THIS SHIT IS SLOW
 def benchmark_rust_strassen(n=2048):
-    """Rust Strassen algorithm with BLAS base case - f32"""
     a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
     b = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)
     
@@ -67,7 +59,6 @@ def benchmark_rust_strassen(n=2048):
 
 
 def benchmark_rust_metal(n=2048):
-    """Rust Metal GPU (Apple Silicon) - f32 only"""
     if not METAL_AVAILABLE:
         return None
     
@@ -83,7 +74,6 @@ def benchmark_rust_metal(n=2048):
 
 
 def benchmark_numpy(n=2048):
-    """NumPy matmul (uses system BLAS) - f32 for fair comparison"""
     a = np.random.rand(n, n).astype(np.float32)
     b = np.random.rand(n, n).astype(np.float32)
     
@@ -96,7 +86,6 @@ def benchmark_numpy(n=2048):
 
 
 def benchmark_torch_cpu(n=2048):
-    """PyTorch CPU matmul - f32"""
     if not TORCH_AVAILABLE:
         return None
     
@@ -112,7 +101,6 @@ def benchmark_torch_cpu(n=2048):
 
 
 def benchmark_torch_mps(n=2048):
-    """PyTorch MPS (Metal Performance Shaders) - f32"""
     if not TORCH_AVAILABLE or not MPS_AVAILABLE:
         return None
     
@@ -130,7 +118,6 @@ def benchmark_torch_mps(n=2048):
 
 
 def format_speedup(baseline, current):
-    """Format speedup/slowdown compared to baseline"""
     if current is None or current <= 0:
         return "N/A"
     ratio = baseline / current
@@ -141,7 +128,6 @@ def format_speedup(baseline, current):
 
 
 def print_system_info():
-    """Print system information"""
     print("System Information:")
     print("-" * 80)
     print(f"Python version: {sys.version.split()[0]}")
@@ -158,14 +144,13 @@ def print_system_info():
 
 
 def main():
-    """Run comprehensive benchmarks"""
     try:
         n = int(input("Square Matrix Dimensions (e.g., 2048): "))
     except (ValueError, EOFError):
         print("Invalid input, using default size 2048")
         n = 2048
     
-    warmup = 3
+    warmup = 2
     iterations = 10
     
     print("\n" + "=" * 80)
@@ -179,11 +164,11 @@ def main():
     results = {}
     
     benchmarks = [
-        ("rust_cpu", "Rust CPU (Accelerate BLAS f32)", benchmark_rust_cpu),
+        #("rust_cpu", "Rust CPU (Accelerate BLAS f32)", benchmark_rust_cpu),
         #("rust_strassen", "Rust Strassen (f32)", benchmark_rust_strassen),
         ("rust_metal", "Rust Metal GPU (f32)", benchmark_rust_metal),
-        ("numpy", "NumPy (f32)", benchmark_numpy),
-        ("torch_cpu", "PyTorch CPU (f32)", benchmark_torch_cpu),
+        #("numpy", "NumPy (f32)", benchmark_numpy),
+        #("torch_cpu", "PyTorch CPU (f32)", benchmark_torch_cpu),
         ("torch_mps", "PyTorch MPS (f32)", benchmark_torch_mps),
     ]
     
@@ -204,20 +189,20 @@ def main():
     numpy_mean = results.get('numpy', {}).get('mean', 1.0)
     
     display_order = [
-        'rust_cpu',
+        #'rust_cpu',
         #'rust_strassen',
         'rust_metal',
-        'numpy',
-        'torch_cpu',
+        #'numpy',
+        #'torch_cpu',
         'torch_mps',
     ]
     
     display_names = {
-        'rust_cpu': 'Rust CPU (Accelerate f32)',
+        #'rust_cpu': 'Rust CPU (Accelerate f32)',
         #'rust_strassen': 'Rust Strassen (f32)',
         'rust_metal': 'Rust Metal GPU (f32)',
-        'numpy': 'NumPy (f32)',
-        'torch_cpu': 'PyTorch CPU (f32)',
+        #'numpy': 'NumPy (f32)',
+        #'torch_cpu': 'PyTorch CPU (f32)',
         'torch_mps': 'PyTorch MPS (f32)',
     }
     
@@ -231,7 +216,7 @@ def main():
     
     print("-" * 80)
     
-    print("\nDetailed Statistics:")
+    print("\nStatistics:")
     print("-" * 80)
     for key in display_order:
         if key not in results:
