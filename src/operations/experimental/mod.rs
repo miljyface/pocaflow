@@ -1,5 +1,5 @@
 #[cfg(target_os = "macos")]
 pub mod metal_matmul;
 
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(target_os = "linux")]
 pub mod cuda_matmul;
