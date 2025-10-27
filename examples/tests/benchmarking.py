@@ -32,7 +32,7 @@ class MatmulBackend:
 def get_backends():
     backends = []
     # Rust GPU/Metal/CUDA generic entrypoint
-    backends.append(MatmulBackend("Rust GPU/Metal/CUDA (rs.matmul)", lambda a, b: rs.cuda_matmul_f32(a, b)))
+    backends.append(MatmulBackend("Rust GPU/Metal/CUDA (rs.matmul)", lambda a, b: rs.matmul(a, b)))
     # PyTorch CUDA/MPS
     if torch.cuda.is_available():
         backends.append(MatmulBackend("PyTorch CUDA (torch.matmul)", lambda a, b: torch.matmul(
