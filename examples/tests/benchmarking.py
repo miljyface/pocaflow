@@ -11,21 +11,13 @@ def hasattr_mod(obj, attr):
     except Exception:
         return False
 
-def is_windows():
-    return sys.platform.startswith("win")
-
-def is_linux():
-    return sys.platform.startswith("linux")
-
 TORCH_AVAILABLE = True
-PYTORCH_ENABLE_MPS_FALLBACK = 0
-
 MPS_AVAILABLE = TORCH_AVAILABLE and hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 METAL_AVAILABLE = hasattr_mod(rs, 'metal_matmul_f32')
-
 PYTORCH_CUDA_AVAILABLE = TORCH_AVAILABLE and torch.cuda.is_available()
-RUST_CUDA_AVAILABLE = hasattr_mod(rs, 'matmul')
-RUST_MATMUL_AVAILABLE = hasattr_mod(rs, 'matmul')
+RUST_CUDA_AVAILABLE = hasattr_mod(rs, 'cuda_matmul_f32')
+RUST_METAL_AVAILABLE = hasattr_mod(rs, 'metal_matmul_f32')
+RUST_GENERIC_AVAILABLE = hasattr_mod(rs, 'matmul')
 
 class MatmulBackend:
     def __init__(self, name, runner, validate_runner=None, enabled=True):
@@ -79,32 +71,32 @@ def get_backends():
         MatmulBackend("Rust CPU (f32)", lambda a, b: rs.matmul_f32_cpu(a, b)),
         MatmulBackend("NumPy (f32)", lambda a, b: np.dot(a, b))
     ]
-    if METAL_AVAILABLE:
-        backends.append(MatmulBackend("Rust GPU (f32, Metal)", lambda a, b: rs.matmul(a, b)))
+    if RUST_METAL_AVAILABLE:
+        backends.append(MatmulBackend("Rust GPU (f32, Metal)", lambda a, b: rs.metal_matmul_f32(a, b)))
     if TORCH_AVAILABLE:
         backends.append(MatmulBackend(
             "PyTorch CPU (f32)",
             lambda a, b: torch.matmul(torch.from_numpy(a), torch.from_numpy(b)).cpu().numpy()))
     if MPS_AVAILABLE:
         backends.append(MatmulBackend(
-            "PyTorch MPS (Apple)", 
+            "PyTorch MPS (Apple)",
             lambda a, b: torch.matmul(
                 torch.from_numpy(a).to("mps"),
                 torch.from_numpy(b).to("mps")).cpu().numpy()))
     if PYTORCH_CUDA_AVAILABLE:
         backends.append(MatmulBackend(
-            "PyTorch CUDA (f32)", 
+            "PyTorch CUDA (f32)",
             lambda a, b: torch.matmul(
                 torch.from_numpy(a).to("cuda"),
                 torch.from_numpy(b).to("cuda")
             ).cpu().numpy()))
     if RUST_CUDA_AVAILABLE:
         backends.append(MatmulBackend(
-            "Rust CUDA (cuBLAS f32)", 
-            lambda a, b: rs.matmul(a, b)))
-    elif RUST_MATMUL_AVAILABLE:
+            "Rust CUDA (cuBLAS f32)",
+            lambda a, b: rs.cuda_matmul_f32(a, b)))
+    elif RUST_GENERIC_AVAILABLE:
         backends.append(MatmulBackend(
-            "Rust GPU/Generic (f32)", 
+            "Rust (Generic, fallback)",
             lambda a, b: rs.matmul(a, b)))
     return backends
 
@@ -152,7 +144,6 @@ def main():
                 backend_results[backend.name]["means"].append(np.nan)
                 print(f" (skipped)")
 
-    # Print results table
     print("\n==== Results Table (mean ms per run) ====")
     header = ["Size"] + [name for name in backend_results]
     print(" | ".join(f"{h:>18}" for h in header))

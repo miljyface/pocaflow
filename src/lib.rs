@@ -20,6 +20,12 @@ fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
         m
     )?)?;
 
+    #[cfg(not(target_os = "macos"))]
+    m.add_function(wrap_pyfunction!(
+        operations::experimental::cuda_matmul::cuda_matmul_f32,
+        m
+    )?)?;
+
     m.add_function(wrap_pyfunction!(operations::vec_ops::dot, m)?)?;
     m.add_function(wrap_pyfunction!(operations::vec_ops::cross, m)?)?;
     m.add_function(wrap_pyfunction!(operations::vec_ops::magnitude, m)?)?;
