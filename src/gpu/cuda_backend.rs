@@ -2,7 +2,7 @@
 macro_rules! cuda_check {
     ($expr:expr) => {{
         let status = $expr;
-        if status != cuda_driver_sys::CUresult::CUDA_SUCCESS {
+        if status != cuda_sys::cuda::CUresult::CUDA_SUCCESS {
             panic!("CUDA error at {}:{}: {:?}", file!(), line!(), status);
         }
     }};
@@ -22,7 +22,7 @@ use cublas_sys::{
     cublasHandle_t, cublasCreate_v2, cublasDestroy_v2, cublasSetStream_v2,
     cublasSgemm_v2, cublasOperation_t
 };
-use cuda_driver_sys::{
+use cuda_sys::cuda::{
     CUcontext, CUdevice, CUstream, CUdeviceptr, cuInit, cuDeviceGet,
     cuCtxCreate_v2, cuStreamCreate, cuMemAlloc_v2, cuMemcpyHtoDAsync_v2,
     cuMemcpyDtoHAsync_v2, cuStreamSynchronize, cuStreamDestroy_v2,
