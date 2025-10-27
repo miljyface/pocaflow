@@ -2,12 +2,18 @@ use pyo3::prelude::*;
 use numpy::{PyReadonlyArray2, PyArray2};
 use crate::blas::{dgemm, sgemm};
 
-// Metal on macOS
-#[cfg(target_os = "macos")]
-use super::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
+// Platform-specific GPU backend selection
 
-// CUDA on Linux/Windows if implemented, otherwise provide a pure-CPU fallback
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+// --- Metal on macOS ---
+#[cfg(target_os = "macos")]
+use crate::operations::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
+
+// --- CUDA (cuBLAS) for Linux/Windows ---
+#[cfg(not(target_os = "macos"))]
+use crate::operations::experimental::cuda_matmul::cuda_matmul_f32 as gpu_matmul_f32;
+
+// --- Fallback CPU (dot) if no Metal/CUDA available ---
+#[cfg(not(any(target_os = "macos", feature = "cuda")))]
 mod gpu_stub {
     use numpy::{PyReadonlyArray2, PyArray2};
     use pyo3::prelude::*;
@@ -19,7 +25,7 @@ mod gpu_stub {
         Ok(PyArray2::from_owned_array(py, a.as_array().dot(&b.as_array())))
     }
 }
-#[cfg(any(target_os = "linux", target_os = "windows"))]
+#[cfg(not(any(target_os = "macos", feature = "cuda")))]
 use gpu_stub::gpu_matmul_f32;
 
 #[pyfunction]

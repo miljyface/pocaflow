@@ -3,15 +3,24 @@ use numpy::{PyReadonlyArray2, PyArray2};
 use crate::gpu::CudaContext;
 
 #[pyfunction]
-pub fn cudamatmul_f32<'py>(
+pub fn cuda_matmul_f32<'py>(
     py: Python<'py>,
     a: PyReadonlyArray2<'py, f32>,
-    b: PyReadonlyArray2<'py, f32>
+    b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
+    let a_arr = a.as_array();
+    let b_arr = b.as_array();
+    let (m, k1) = a_arr.dim();
+    let (k2, n) = b_arr.dim();
+    if k1 != k2 {
+        return Err(pyo3::exceptions::PyValueError::new_err("Dimension mismatch"));
+    }
     let ctx = CudaContext::new();
-    let a_owned = a.as_array().to_owned();
-    let b_owned = b.as_array().to_owned();
-    let result = ctx.matmul_f32(&a_owned, &b_owned);
+    let a_owned = a_arr.to_owned();
+    let b_owned = b_arr.to_owned();
+    // If you want to allow GIL-released execution for long GPU runs:
+    let result = py.allow_threads(|| {
+        ctx.matmul_f32(&a_owned, &b_owned)
+    });
     Ok(PyArray2::from_owned_array(py, result))
 }
-
