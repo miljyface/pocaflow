@@ -3,8 +3,9 @@ import numpy as np
 import pocaflow as rs
 import sys
 import platform
-
 import torch
+import matplotlib.pyplot as plt
+
 TORCH_AVAILABLE = True
 
 def hasattr_mod(obj, attr):
@@ -13,26 +14,15 @@ def hasattr_mod(obj, attr):
     except Exception:
         return False
 
+PYTORCH_ENABLE_MPS_FALLBACK = 0
 MPS_AVAILABLE = TORCH_AVAILABLE and torch.backends.mps.is_available()
 METAL_AVAILABLE = hasattr_mod(rs, 'metal_matmul_f32')
 CUDA_AVAILABLE = hasattr_mod(rs, 'cuda_matmul_f32') and sys.platform.startswith("win")
 
-def prompt_int(prompt, default):
-    s = input(prompt + f" [default {default}]: ")
-    try:
-        return int(s)
-    except Exception:
-        return default
-
-def prompt_choice(prompt, choices, default):
-    s = input(prompt + f" {choices} [default {default}]: ")
-    s = s.strip().lower()
-    if not s:
-        return default
-    opts = {c.lower(): c for c in choices}
-    return opts.get(s, default)
+# --- snip: no changes to prompt_int or prompt_choice ---
 
 class MatmulBackend:
+    # ... no changes to this class ...
     def __init__(self, name, runner, validate_runner=None, enabled=True):
         self.name = name
         self.runner = runner
@@ -48,9 +38,7 @@ class MatmulBackend:
 
         times = []
         c = None
-        # makes sure c is always defined
         success = False 
-
         for _ in range(iterations):
             try:
                 t0 = time.perf_counter()
@@ -86,12 +74,13 @@ class MatmulBackend:
         return result
 
 def get_backends():
+    # ... no changes to backend construction ...
     backends = [
-        MatmulBackend("Rust CPU (Accelerate f32)", lambda a, b: rs.matmul_f32_cpu(a, b)),
+        MatmulBackend("Rust CPU (f32)", lambda a, b: rs.matmul_f32_cpu(a, b)),
         MatmulBackend("NumPy (f32)", lambda a, b: np.dot(a, b)),
     ]
     if METAL_AVAILABLE:
-        backends.append(MatmulBackend("Rust Metal GPU (f32)", lambda a, b: rs.matmul(a, b)))
+        backends.append(MatmulBackend("Rust GPU (f32)", lambda a, b: rs.matmul(a, b)))
     if TORCH_AVAILABLE:
         backends.append(
             MatmulBackend(
@@ -102,7 +91,7 @@ def get_backends():
         if MPS_AVAILABLE:
             backends.append(
                 MatmulBackend(
-                    "PyTorch MPS (f32)",
+                    "PyTorch GPU (f32)",
                     lambda a, b: torch.matmul(torch.from_numpy(a).to("mps"), torch.from_numpy(b).to("mps")).cpu().numpy()
                 )
             )
@@ -130,42 +119,81 @@ def print_system_info():
 def main():
     print("=== Matrix Multiplication Benchmark ===")
     print_system_info()
-    n = prompt_int("Square matrix size (n x n)", 2048)
-    iterations = prompt_int("Iteration count", 10)
-    validate = prompt_choice("Validate result accuracy? (can slow down)", ['no', 'yes'], 'no') == 'yes'
+
+    sizes = [256, 512, 1024, 2048, 4096]
+    iterations = 10
+    warmup = 3
     dtype = np.float32
+    validate = False
 
-    print(f"Generating input matrices A, B of shape ({n}, {n}) with dtype {dtype}...")
-    a = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
-    b = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
-
+    backend_results = {}
     backends = get_backends()
 
-    print("\n--- Running Benchmarks ---\n")
-    results = {}
-    ref_func = lambda a, b: np.dot(a, b)
     for backend in backends:
-        print(f"Benchmarking {backend.name}...")
-        result = backend.bench(a, b, iterations=iterations, warmup=3, validate=(ref_func if validate else None))
-        if result:
-            results[backend.name] = result
-            print(f"   mean: {result['mean']:.4f} ms, std: {result['std']:.4f} ms, min: {result['min']:.4f} ms, max: {result['max']:.4f} ms" +
-                  (f", rel err: {result['rel_error']:.2e}" if validate and 'rel_error' in result else ""))
-        else:
-            print("   Skipped (backend not available or errored)")
+        backend_results[backend.name] = {"sizes": [], "means": []}
 
-    print("\n===== RESULTS =====")
-    print(f"{'Implementation':<28} {'Mean (ms)':>12} {'Std (ms)':>12} {'Min':>12} {'Max':>12} {'RelErr':>10}")
-    print("-" * 80)
-    numpy_result = results.get("NumPy (f32)", {"mean": 1.0})
-    base = numpy_result["mean"]
-    for k, v in results.items():
-        speedup = f"{(base/v['mean']):.2f}x faster" if v["mean"] > 0 and base else ""
-        err_str = f"{v.get('rel_error', 0):.2e}" if validate and 'rel_error' in v else ""
-        print(f"{k:<28} {v['mean']:12.4f} {v['std']:12.4f} {v['min']:12.4f} {v['max']:12.4f} {err_str:>10} {speedup}")
+    for n in sizes:
+        print(f"\n=== Benchmarking size {n}x{n} ===")
+        a = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
+        b = np.ascontiguousarray(np.random.rand(n, n), dtype=dtype)
+        ref_func = lambda a, b: np.dot(a, b)
+        for backend in backends:
+            print(f"  {backend.name}...", end="", flush=True)
+            result = backend.bench(a, b, iterations=iterations, warmup=warmup, validate=(ref_func if validate else None))
+            if result:
+                backend_results[backend.name]["sizes"].append(n)
+                backend_results[backend.name]["means"].append(result["mean"])
+                print(f" {result['mean']:.2f} ms")
+            else:
+                backend_results[backend.name]["sizes"].append(n)
+                backend_results[backend.name]["means"].append(np.nan)
+                print(f" (skipped)")
 
-    print("-" * 80)
-    best = min(results.items(), key=lambda x: x[1]['mean'])
-    print(f"FASTEST: {best[0]} ({best[1]['mean']:.2f} ms)")
+    return backend_results, sizes
 
-main()
+def plot_backend_results(backend_results, sizes):
+    plt.figure(figsize=(12, 8))
+    best_means = []
+    best_labels = []
+
+    # Plot each backend
+    colors = plt.cm.tab10.colors
+    for idx, (name, data) in enumerate(backend_results.items()):
+        plt.plot(
+            data["sizes"], data["means"],
+            marker='o', label=name,
+            color=colors[idx % len(colors)],
+            linewidth=2 if idx == 0 else 1  # Optionally highlight first entry
+        )
+
+    # For each matrix size, find the lowest mean
+    for i, n in enumerate(sizes):
+        means_at_n = []
+        labels_at_n = []
+        for name, data in backend_results.items():
+            means_at_n.append(data["means"][i])
+            labels_at_n.append(name)
+        min_time = min(means_at_n)
+        min_idx = means_at_n.index(min_time)
+        best_means.append(min_time)
+        best_labels.append(labels_at_n[min_idx])
+        # Annotate best
+        plt.scatter(n, min_time, color='red', s=120, edgecolor='black', zorder=10)
+        plt.text(
+            n, min_time*1.1, f'Winner: {labels_at_n[min_idx]}', 
+            color='black', ha='center', va='bottom', fontsize=10,
+            fontweight='bold'
+        )
+
+    plt.xlabel("Matrix size (n)", fontsize=15)
+    plt.ylabel("Mean time (ms)", fontsize=15)
+    plt.xscale('log', base=2)
+    plt.yscale('log')
+    plt.title("Matrix multiplication performance (mean time per backend)", fontsize=18, fontweight='bold')
+    plt.legend(fontsize=13)
+    plt.grid(True, which="both", ls="--", alpha=0.4)
+    plt.tight_layout()
+    plt.show()
+
+backend_results, sizes = main()
+plot_backend_results(backend_results, sizes)
