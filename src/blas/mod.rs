@@ -1,7 +1,5 @@
-#[cfg(target_os = "macos")]
-pub mod bindings;
-
+pub mod bindings; // Only contains macOS cblas FFI, OK if empty elsewhere
 pub mod operations;
 
-#[cfg(target_os = "macos")]
-pub use operations::{dgemm, sgemm}; // only available with Accelerate
+// Always re‑export from operations (which defines everything correctly per platform)
+pub use operations::{dgemm, sgemm};

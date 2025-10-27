@@ -3,7 +3,7 @@ use ndarray::{Array2, ArrayView2};
 #[cfg(target_os = "macos")]
 use super::bindings::*;
 
-// ---- macOS Accelerate versions ----
+// Accelerate path (macOS only)
 #[cfg(target_os = "macos")]
 #[inline]
 pub fn dgemm(a: ArrayView2<f64>, b: ArrayView2<f64>) -> Array2<f64> {
@@ -44,7 +44,7 @@ pub fn sgemm(a: ArrayView2<f32>, b: ArrayView2<f32>) -> Array2<f32> {
     result
 }
 
-// ---- Cross-platform fallbacks (Linux + Windows) ----
+// Fallback for non-macOS (Linux/Windows)
 #[cfg(not(target_os = "macos"))]
 #[inline]
 pub fn dgemm(a: ArrayView2<f64>, b: ArrayView2<f64>) -> Array2<f64> {

@@ -2,9 +2,11 @@ use pyo3::prelude::*;
 use numpy::{PyReadonlyArray2, PyArray2};
 use crate::blas::{dgemm, sgemm};
 
+// Metal on macOS
 #[cfg(target_os = "macos")]
 use super::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
 
+// CUDA on Linux/Windows if implemented, otherwise provide a pure-CPU fallback
 #[cfg(any(target_os = "linux", target_os = "windows"))]
 mod gpu_stub {
     use numpy::{PyReadonlyArray2, PyArray2};
@@ -14,7 +16,6 @@ mod gpu_stub {
         a: PyReadonlyArray2<'py, f32>,
         b: PyReadonlyArray2<'py, f32>,
     ) -> PyResult<&'py PyArray2<f32>> {
-        // Fallback to CPU implementation
         Ok(PyArray2::from_owned_array(py, a.as_array().dot(&b.as_array())))
     }
 }
