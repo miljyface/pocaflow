@@ -4,8 +4,6 @@ import pocaflow as rs
 import sys
 import platform
 import torch
-import matplotlib.pyplot as plt
-
 TORCH_AVAILABLE = True
 
 def hasattr_mod(obj, attr):
@@ -15,14 +13,11 @@ def hasattr_mod(obj, attr):
         return False
 
 PYTORCH_ENABLE_MPS_FALLBACK = 0
-MPS_AVAILABLE = TORCH_AVAILABLE and torch.backends.mps.is_available()
+MPS_AVAILABLE = TORCH_AVAILABLE and hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
 METAL_AVAILABLE = hasattr_mod(rs, 'metal_matmul_f32')
 CUDA_AVAILABLE = hasattr_mod(rs, 'cuda_matmul_f32') and sys.platform.startswith("win")
 
-# --- snip: no changes to prompt_int or prompt_choice ---
-
 class MatmulBackend:
-    # ... no changes to this class ...
     def __init__(self, name, runner, validate_runner=None, enabled=True):
         self.name = name
         self.runner = runner
@@ -38,7 +33,7 @@ class MatmulBackend:
 
         times = []
         c = None
-        success = False 
+        success = False
         for _ in range(iterations):
             try:
                 t0 = time.perf_counter()
@@ -74,7 +69,6 @@ class MatmulBackend:
         return result
 
 def get_backends():
-    # ... no changes to backend construction ...
     backends = [
         MatmulBackend("Rust CPU (f32)", lambda a, b: rs.matmul_f32_cpu(a, b)),
         MatmulBackend("NumPy (f32)", lambda a, b: np.dot(a, b)),
@@ -119,7 +113,6 @@ def print_system_info():
 def main():
     print("=== Matrix Multiplication Benchmark ===")
     print_system_info()
-
     sizes = [256, 512, 1024, 2048, 4096]
     iterations = 10
     warmup = 3
@@ -128,7 +121,6 @@ def main():
 
     backend_results = {}
     backends = get_backends()
-
     for backend in backends:
         backend_results[backend.name] = {"sizes": [], "means": []}
 
@@ -149,51 +141,16 @@ def main():
                 backend_results[backend.name]["means"].append(np.nan)
                 print(f" (skipped)")
 
-    return backend_results, sizes
+    # Pretty print table (backend as columns, sizes as rows)
+    print("\n==== Results Table (mean ms per run) ====")
+    header = ["Size"] + [name for name in backend_results]
+    print(" | ".join(f"{h:>18}" for h in header))
+    print("-" * (20 * len(header)))
+    for idx, n in enumerate(sizes):
+        row = [f"{n:>18}"]
+        for name in backend_results:
+            mean = backend_results[name]["means"][idx]
+            row.append(f"{mean:>18.2f}")
+        print(" | ".join(row))
 
-def plot_backend_results(backend_results, sizes):
-    plt.figure(figsize=(12, 8))
-    best_means = []
-    best_labels = []
-
-    # Plot each backend
-    colors = plt.cm.tab10.colors
-    for idx, (name, data) in enumerate(backend_results.items()):
-        plt.plot(
-            data["sizes"], data["means"],
-            marker='o', label=name,
-            color=colors[idx % len(colors)],
-            linewidth=2 if idx == 0 else 1  # Optionally highlight first entry
-        )
-
-    # For each matrix size, find the lowest mean
-    for i, n in enumerate(sizes):
-        means_at_n = []
-        labels_at_n = []
-        for name, data in backend_results.items():
-            means_at_n.append(data["means"][i])
-            labels_at_n.append(name)
-        min_time = min(means_at_n)
-        min_idx = means_at_n.index(min_time)
-        best_means.append(min_time)
-        best_labels.append(labels_at_n[min_idx])
-        # Annotate best
-        plt.scatter(n, min_time, color='red', s=120, edgecolor='black', zorder=10)
-        plt.text(
-            n, min_time*1.1, f'Winner: {labels_at_n[min_idx]}', 
-            color='black', ha='center', va='bottom', fontsize=10,
-            fontweight='bold'
-        )
-
-    plt.xlabel("Matrix size (n)", fontsize=15)
-    plt.ylabel("Mean time (ms)", fontsize=15)
-    plt.xscale('log', base=2)
-    plt.yscale('log')
-    plt.title("Matrix multiplication performance (mean time per backend)", fontsize=18, fontweight='bold')
-    plt.legend(fontsize=13)
-    plt.grid(True, which="both", ls="--", alpha=0.4)
-    plt.tight_layout()
-    plt.show()
-
-backend_results, sizes = main()
-plot_backend_results(backend_results, sizes)
+main()
