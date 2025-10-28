@@ -14,12 +14,12 @@ pub fn matmul<'py>(
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
-    // Convert to &PyAny using .as_ref()
     let a_any: &pyo3::PyAny = a.as_ref();
     let b_any: &pyo3::PyAny = b.as_ref();
 
-    let result = gpu_matmul_f32(py, a_any, b_any)?;
-    result.extract::<&PyArray2<f32>>(py)
+    let obj = gpu_matmul_f32(py, a_any, b_any)?;
+    let pyarray = obj.downcast::<PyArray2<f32>>(py)?; // Borrow valid for 'py
+    Ok(pyarray)
 }
 
 #[pyfunction]
