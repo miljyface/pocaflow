@@ -124,14 +124,13 @@ impl CudaContext {
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            // Standard: A (m x k), B (k x n), C (m x n)
-            let lda = m as u64;
-            let ldb = k as u64;
-            let ldc = m as u64;
-
-            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, lda);
-            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, ldb);
-            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, ldc);
+            // CRITICAL FIX: Correct leading dimensions for column-major
+            // A: (m x k), stored column-major, ld = m
+            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, m as u64);
+            // B: (k x n), stored column-major, ld = k  
+            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
+            // C: (m x n), stored column-major, ld = m
+            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
 
             let status = cublasLtMatmul(
                 self.handle,
