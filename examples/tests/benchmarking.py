@@ -4,7 +4,7 @@ import time
 
 print("=== Optimized Performance Benchmark ===\n")
 
-for size in [256, 512, 1024, 2048, 4096]:
+for size in [256, 512, 1024, 2048, 4096, 8192, 16384]:
     a = np.random.randn(size, size).astype(np.float32)
     b = np.random.randn(size, size).astype(np.float32)
     
