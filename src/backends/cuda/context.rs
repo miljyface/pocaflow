@@ -180,8 +180,9 @@ impl CudaContext {
             // Cast stream to cublas-compatible type
             cublas_error_to_string(cublasSetStream_v2(
                 self.handle, 
-                stream as *mut cublas_sys::CUstream_st
+                stream as *mut _ 
             ))?;
+
 
             // cuBLAS uses column-major, so swap A and B
             cublas_error_to_string(cublasSgemm_v2(
