@@ -1,7 +1,6 @@
 use super::{DType, Shape, Stride};
 use std::sync::Arc;
 
-/// Device location for tensor data
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Device {
     CPU,
@@ -56,6 +55,59 @@ impl Storage {
         }
     }
 
+    #[cfg(target_os = "linux")]
+    pub fn new_cuda(size: usize, device: usize) -> Result<Self, String> {
+        use std::ffi::c_void;
+        
+        // Set CUDA device
+        unsafe {
+            let ret = cuda_runtime_sys::cudaSetDevice(device as i32);
+            if ret != 0 {
+                return Err(format!("cudaSetDevice failed: {}", ret));
+            }
+        }
+        
+        // Allocate GPU memory
+        let mut ptr: *mut c_void = std::ptr::null_mut();
+        unsafe {
+            let ret = cuda_runtime_sys::cudaMalloc(&mut ptr as *mut *mut c_void, size);
+            if ret != 0 || ptr.is_null() {
+                return Err(format!("cudaMalloc failed: {}", ret));
+            }
+            
+            // Zero initialize
+            cuda_runtime_sys::cudaMemset(ptr, 0, size);
+        }
+        
+        Ok(Storage::CUDA { ptr, size, device })
+    }
+
+    #[cfg(target_os = "macos")]
+    pub fn new_metal(size: usize, device: usize) -> Result<Self, String> {
+        use metal::{Device as MetalDevice, MTLResourceOptions};
+        
+        let mtl_device = MetalDevice::system_default()
+            .ok_or("Failed to get Metal device")?;
+        
+        let buffer = mtl_device.new_buffer(
+            size as u64,
+            MTLResourceOptions::StorageModeShared,
+        );
+        
+        let ptr = buffer.contents() as *mut std::ffi::c_void;
+        
+        // Zero initialize
+        unsafe {
+            std::ptr::write_bytes(ptr as *mut u8, 0, size);
+        }
+        
+        // We need to keep the buffer alive, so we leak it here
+        // In production, you'd wrap this in a proper RAII struct
+        std::mem::forget(buffer);
+        
+        Ok(Storage::Metal { ptr, size, device })
+    }
+
     pub fn size(&self) -> usize {
         match self {
             Storage::CPU { data } => data.len(),
@@ -76,7 +128,6 @@ impl Storage {
         }
     }
 
-    /// Get raw pointer (for GPU operations)
     pub unsafe fn as_ptr(&self) -> *const u8 {
         match self {
             Storage::CPU { data } => data.as_ptr(),
@@ -98,6 +149,27 @@ impl Storage {
     }
 }
 
+impl Drop for Storage {
+    fn drop(&mut self) {
+        match self {
+            Storage::CPU { .. } => {
+                // Vec handles deallocation automatically
+            }
+            #[cfg(target_os = "linux")]
+            Storage::CUDA { ptr, .. } => unsafe {
+                if !ptr.is_null() {
+                    cuda_runtime_sys::cudaFree(*ptr);
+                }
+            },
+            #[cfg(target_os = "macos")]
+            Storage::Metal { .. } => {
+                // Metal buffer was leaked in new_metal, would need proper cleanup
+                // In production, wrap in Arc<MetalBuffer> or similar
+            }
+        }
+    }
+}
+
 /// High-performance tensor with GPU support
 pub struct Tensor {
     storage: Arc<Storage>,
@@ -108,34 +180,27 @@ pub struct Tensor {
 }
 
 impl Tensor {
-    pub fn zeros(shape: Shape, dtype: DType, device: Device) -> Self {
+    pub fn zeros(shape: Shape, dtype: DType, device: Device) -> Result<Self, String> {
         let numel = shape.numel();
         let size = numel * dtype.size();
         
         let storage = match device {
             Device::CPU => Storage::new_cpu(size),
             #[cfg(target_os = "linux")]
-            Device::CUDA(dev_id) => {
-                // Allocate on GPU via CUDA
-                // This is a placeholder - actual implementation would use cudaMalloc
-                Storage::new_cpu(size)
-            },
+            Device::CUDA(dev_id) => Storage::new_cuda(size, dev_id)?,
             #[cfg(target_os = "macos")]
-            Device::Metal(_dev_id) => {
-                // Allocate on GPU via Metal
-                Storage::new_cpu(size)
-            },
+            Device::Metal(dev_id) => Storage::new_metal(size, dev_id)?,
         };
 
         let stride = Stride::contiguous(&shape);
 
-        Self {
+        Ok(Self {
             storage: Arc::new(storage),
             shape,
             stride,
             dtype,
             offset: 0,
-        }
+        })
     }
 
     pub fn from_slice_f32(data: &[f32], shape: Shape) -> Self {
@@ -187,17 +252,14 @@ impl Tensor {
         &self.stride
     }
 
-    /// Get raw data pointer (unsafe, for FFI/GPU ops)
     pub unsafe fn data_ptr(&self) -> *const u8 {
         self.storage.as_ptr().add(self.offset)
     }
 
-    /// Check if tensor is contiguous
     pub fn is_contiguous(&self) -> bool {
         self.stride == Stride::contiguous(&self.shape)
     }
 
-    /// View as slice (CPU only, contiguous only)
     pub fn as_slice_f32(&self) -> Option<&[f32]> {
         if self.dtype != DType::F32 || self.device() != Device::CPU || !self.is_contiguous() {
             return None;
@@ -213,7 +275,6 @@ impl Tensor {
     }
 }
 
-// Manual Clone for reference-counted storage
 impl Clone for Tensor {
     fn clone(&self) -> Self {
         Self {

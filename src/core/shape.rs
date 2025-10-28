@@ -1,4 +1,3 @@
-/// Tensor shape with compile-time rank checking
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Shape {
     dims: Vec<usize>,
@@ -43,7 +42,7 @@ impl Shape {
 
     #[inline]
     pub fn is_contiguous(&self) -> bool {
-        // For now, assume all shapes are contiguous
+        // for now, assume all shapes are contiguous
         true
     }
 
@@ -91,7 +90,6 @@ impl From<&[usize]> for Shape {
     }
 }
 
-/// Stride information for tensor layout
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stride {
     strides: Vec<usize>,

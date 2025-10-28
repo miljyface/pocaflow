@@ -23,7 +23,8 @@ impl Tensor {
         let device = crate::core::tensor::Device::CPU;
         
         Ok(Self {
-            inner: CoreTensor::zeros(shape, dtype, device),
+            inner: CoreTensor::zeros(shape, dtype, device)
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
         })
     }
 
