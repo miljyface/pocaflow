@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use numpy::{PyArray2, PyReadonlyArray2};
-use metal::context::MetalContext;
+use context::MetalContext;
 use std::sync::OnceLock;
 use std::sync::Mutex;
 

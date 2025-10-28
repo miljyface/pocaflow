@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use numpy::{PyArray2, PyReadonlyArray2};
-use cuda::context::CudaContext;
+use context::CudaContext;
 use std::sync::{OnceLock, Mutex};
 
 static CUDA_CTX: OnceLock<Mutex<CudaContext>> = OnceLock::new();
