@@ -26,18 +26,8 @@ pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
 
     let mut ctx_guard = ctx.lock().unwrap();
     
-    // ALLOCATE FRESH OUTPUT BUFFER (don't reuse)
-    use cuda_runtime_sys::{cudaMalloc, cudaError_t};
-    use std::ffi::c_void;
-    
-    let d_c = unsafe {
-        let mut ptr: *mut f32 = std::ptr::null_mut();
-        let ret = cudaMalloc(&mut ptr as *mut _ as *mut *mut c_void, m * n * 4);
-        if ret != cudaError_t::cudaSuccess {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("cudaMalloc failed"));
-        }
-        ptr
-    };
+    // Get cached output buffer (reuse across calls)
+    let d_c = ctx_guard.buffer_cache.lock().unwrap().get_or_alloc(m, n);
     
     // Compute on GPU
     ctx_guard.matmul_f32_gpu(a.ptr, b.ptr, d_c, m, n, k, 0)
@@ -47,6 +37,6 @@ pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
         ptr: d_c,
         shape: (m, n),
         device: "cuda".to_string(),
-        owns_memory: true, // This tensor owns and will free the memory
+        owns_memory: false, // IMPORTANT: Cache owns it, don't free on drop
     })
 }
