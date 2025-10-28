@@ -62,6 +62,22 @@ impl Tensor {
         })
     }
 
+    pub fn to_array(&self, py: Python) -> PyResult<Py<PyArray2<f32>>> {
+        let (m, n) = self.shape;
+        unsafe {
+            let host_buf = PyArray2::<f32>::new(py, [m as usize, n as usize], false); // F-order!
+            let dest_ptr = host_buf.as_ptr();
+            // Device to host copy
+            cudaMemcpy(
+                dest_ptr as *mut c_void,
+                self.ptr as *const c_void,
+                (m * n) * std::mem::size_of::<f32>(),
+                cudaMemcpyKind::cudaMemcpyDeviceToHost,
+            );
+            Ok(host_buf.to_owned())
+        }
+    }
+
     pub fn numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f32>> {
         let (m, n) = self.shape;
         let mut result = vec![0.0f32; m * n];
