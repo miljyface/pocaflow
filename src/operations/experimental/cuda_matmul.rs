@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
-use numpy::{PyReadonlyArray2, PyArray2};
+use pyo3::types::PyDict;
+use numpy::{PyArray2, PyReadonlyArray2};
 use crate::gpu::CudaContext;
 use std::cell::RefCell;
 
@@ -10,11 +11,25 @@ thread_local! {
 #[pyfunction]
 pub fn cuda_matmul_f32<'py>(
     py: Python<'py>,
-    a: PyReadonlyArray2<'py, f32>,
-    b: PyReadonlyArray2<'py, f32>,
-) -> PyResult<&'py PyArray2<f32>> {
-    let a_owned = a.as_array().to_owned();
-    let b_owned = b.as_array().to_owned();
+    a: &PyAny,
+    b: &PyAny,
+) -> PyResult<PyObject> {
+    // Check if inputs are already CUDA tensors
+    let a_device = a.getattr("device")?.str()?.to_string();
+    let b_device = b.getattr("device")?.str()?.to_string();
+    
+    if a_device.contains("cuda") && b_device.contains("cuda") {
+        // FAST PATH: Already on GPU, use PyTorch's matmul
+        let torch = py.import("torch")?;
+        let result = torch.call_method1("matmul", (a, b))?;
+        return Ok(result.into());
+    }
+    
+    // SLOW PATH: CPU tensors, need to copy
+    let a_array = a.extract::<PyReadonlyArray2<f32>>()?;
+    let b_array = b.extract::<PyReadonlyArray2<f32>>()?;
+    let a_owned = a_array.as_array().to_owned();
+    let b_owned = b_array.as_array().to_owned();
 
     let m = a_owned.shape()[0];
     let k = a_owned.shape()[1];
@@ -42,5 +57,6 @@ pub fn cuda_matmul_f32<'py>(
                 format!("CUDA matmul failed: {}", e)
             ))
     })?;
-    Ok(PyArray2::from_owned_array(py, result))
+    
+    Ok(PyArray2::from_owned_array(py, result).into())
 }
