@@ -21,26 +21,18 @@ extern "C" {
     fn cublasLtCreate(handle: *mut cublasLtHandle_t) -> i32;
     fn cublasLtDestroy(handle: cublasLtHandle_t) -> i32;
     fn cublasLtMatmul(
-        lightHandle: cublasLtHandle_t, computeDesc: cublasLtMatmulDesc_t,
-        alpha: *const c_void, A: *const c_void, Adesc: cublasLtMatrixLayout_t,
-        B: *const c_void, Bdesc: cublasLtMatrixLayout_t, beta: *const c_void,
-        C: *const c_void, Cdesc: cublasLtMatrixLayout_t,
-        D: *mut c_void, Ddesc: cublasLtMatrixLayout_t,
-        algo: *const c_void, workspace: *mut c_void, workspaceSizeInBytes: usize,
-        stream: cudaStream_t,
+        lightHandle: cublasLtHandle_t, computeDesc: cublasLtMatmulDesc_t, alpha: *const c_void,
+        A: *const c_void, Adesc: cublasLtMatrixLayout_t, B: *const c_void, Bdesc: cublasLtMatrixLayout_t,
+        beta: *const c_void, C: *const c_void, Cdesc: cublasLtMatrixLayout_t,
+        D: *mut c_void, Ddesc: cublasLtMatrixLayout_t, algo: *const c_void,
+        workspace: *mut c_void, workspaceSizeInBytes: usize, stream: cudaStream_t,
     ) -> i32;
-    fn cublasLtMatmulDescCreate(matmulDesc: *mut cublasLtMatmulDesc_t, computeType: i32, scaleType: i32) -> i32;
-    fn cublasLtMatmulDescSetAttribute(matmulDesc: cublasLtMatmulDesc_t, attr: i32, buf: *const c_void, sizeInBytes: usize) -> i32;
-    fn cublasLtMatrixLayoutCreate(matLayout: *mut cublasLtMatrixLayout_t, type_: i32, rows: u64, cols: u64, ld: u64) -> i32;
+    fn cublasLtMatmulDescCreate(desc: *mut cublasLtMatmulDesc_t, computeType: i32, scaleType: i32) -> i32;
+    fn cublasLtMatrixLayoutCreate(layout: *mut cublasLtMatrixLayout_t, type_: i32, rows: u64, cols: u64, ld: u64) -> i32;
 }
 
 const CUBLAS_COMPUTE_32F: i32 = 68;
 const CUDA_R_32F: i32 = 0;
-const CUBLASLT_MATMUL_DESC_TRANSA: i32 = 0;
-const CUBLASLT_MATMUL_DESC_TRANSB: i32 = 1;
-const CUBLAS_OP_T: i32 = 1;
-const CUBLAS_OP_N: i32 = 0;
-
 type CudaStream = *mut CUstream_st;
 
 pub struct BufferCache {
@@ -111,32 +103,20 @@ impl CudaContext {
                 return Err("matmulDescCreate failed".into());
             }
 
-            // Set transpose for A (OP_T)
-            let transa = CUBLAS_OP_T;
-            cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSA,
-                &transa as *const i32 as *const c_void, 4);
-            
-            // Set transpose for B (OP_N)
-            let transb = CUBLAS_OP_N;
-            cublasLtMatmulDescSetAttribute(operationDesc, CUBLASLT_MATMUL_DESC_TRANSB,
-                &transb as *const i32 as *const c_void, 4);
-
             let mut Adesc = ptr::null_mut();
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            // A transposed: k x m, stored as m x k with ld=m
-            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, m as u64);
-            // B normal: k x n, stored with ld=k
-            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
-            // C: m x n, stored with ld=m
-            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
+            // Row-major C layout: A[m,k] ld=k, B[k,n] ld=n, C[m,n] ld=n
+            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, k as u64);
+            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, n as u64, k as u64, n as u64);
+            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, n as u64, m as u64, n as u64);
 
             let status = cublasLtMatmul(
                 self.handle, operationDesc,
                 &alpha as *const f32 as *const c_void,
+                d_b as *const c_void, Bdesc,  // Swap A and B for row-major
                 d_a as *const c_void, Adesc,
-                d_b as *const c_void, Bdesc,
                 &beta as *const f32 as *const c_void,
                 d_c as *const c_void, Cdesc,
                 d_c as *mut c_void, Cdesc,
