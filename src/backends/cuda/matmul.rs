@@ -1,12 +1,11 @@
 use pyo3::prelude::*;
 use super::context::CudaContext;
-use std::sync::{OnceLock, Mutex};
+use std::sync::{OnceLock, Arc};
+use std::sync::Mutex as StdMutex;
 use crate::python::tensor::Tensor;
-use cuda_runtime_sys::{cudaMalloc, cudaError_t};
-use std::ffi::c_void;
 use std::ptr;
 
-static CUDA_CTX: OnceLock<Mutex<CudaContext>> = OnceLock::new();
+static CUDA_CTX: OnceLock<Arc<StdMutex<CudaContext>>> = OnceLock::new();
 
 #[pyfunction]
 pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
@@ -22,22 +21,13 @@ pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
     }
 
     let ctx = CUDA_CTX.get_or_init(|| {
-        Mutex::new(CudaContext::new(4, 256 * 1024 * 1024).expect("CUDA init failed"))
+        Arc::new(StdMutex::new(CudaContext::new(4, 256 * 1024 * 1024).expect("CUDA init failed")))
     });
 
-    let mut ctx_guard = ctx.lock().unwrap();
+    // Get buffer from pool
+    let d_c = ctx.lock().unwrap().alloc(m, n);
     
-    // Allocate output buffer
-    let d_c = unsafe {
-        let mut ptr: *mut f32 = ptr::null_mut();
-        let ret = cudaMalloc(&mut ptr as *mut _ as *mut *mut c_void, m * n * 4);
-        if ret != cudaError_t::cudaSuccess {
-            return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("cudaMalloc failed"));
-        }
-        ptr
-    };
-    
-    ctx_guard.matmul_f32_gpu(a.ptr, b.ptr, d_c, m, n, k, 0)
+    ctx.lock().unwrap().matmul_f32_gpu(a.ptr, b.ptr, d_c, m, n, k, 0)
         .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
     
     Ok(Tensor {
