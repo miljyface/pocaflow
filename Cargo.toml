@@ -25,6 +25,9 @@ cocoa = "0.25"
 cuda-runtime-sys = { version = "0.3.0-alpha.1" }  # Instead of cuda-sys
 cublas-sys = "0.1.0"
 
+[build-dependencies]
+cc = { version = "1.0", features = ["parallel"] }
+
 [features]
 default = []
 metal-gpu = []
