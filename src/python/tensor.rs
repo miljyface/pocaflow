@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
-use numpy::{PyArray2, PyReadonlyArray2};
+use pyo3::exceptions;
+use numpy::{PyArray2, Element};
 use std::sync::Arc;
 use std::ptr;
 use std::ffi::c_void;
@@ -21,66 +22,69 @@ unsafe impl Send for Tensor {}
 #[pymethods]
 impl Tensor {
     #[staticmethod]
-    pub fn from_array(arr: PyReadonlyArray2<f32>, device: Option<&str>) -> PyResult<Self> {
-        let device = device.unwrap_or("cuda");
-        let arr = arr.as_array();
-        let (m, n) = arr.dim();
-        
-        if device == "cuda" {
-            unsafe {
-                let mut ptr: *mut f32 = ptr::null_mut();
-                let size = m * n * std::mem::size_of::<f32>();
-                
-                let ret = cudaMalloc(
-                    &mut ptr as *mut _ as *mut *mut c_void,
-                    size
-                );
-                if ret != cudaError_t::cudaSuccess {
-                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("cudaMalloc failed"));
-                }
-                
-                cudaMemcpy(
-                    ptr as *mut c_void,
-                    arr.as_ptr() as *const c_void,
-                    size,
-                    cudaMemcpyKind::cudaMemcpyHostToDevice
-                );
-                
-                Ok(Tensor {
-                    ptr,
-                    shape: (m, n),
-                    device: device.to_string(),
-                    owns_memory: true,
-                })
-            }
-        } else {
-            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'cuda' device supported"))
+    pub fn from_array(_py: Python, arr: &PyAny, device: usize) -> PyResult<Self> {
+        let arr = arr.downcast::<PyArray2<f32>>()
+            .map_err(|_| PyErr::new::<exceptions::PyTypeError, _>(
+                "Input must be a 2D numpy.ndarray of float32"))?;
+
+        let shape = arr.shape();
+        if shape.len() != 2 {
+            return Err(PyErr::new::<exceptions::PyValueError, _>(
+                "Only 2D arrays supported for GPU matmul"));
         }
+        // Enforce Fortran order for cuBLAS compatibility
+        if !arr.is_fortran_contiguous() {
+            return Err(PyErr::new::<exceptions::PyValueError, _>(
+                "Array must be Fortran-contiguous (use np.asfortranarray)"));
+        }
+        let (m, n) = (shape[0], shape[1]);
+        let numel = m * n;
+        let size = numel * std::mem::size_of::<f32>();
+
+        // Allocate CUDA memory
+        let mut d_ptr: *mut f32 = ptr::null_mut();
+        unsafe {
+            cudaMalloc(&mut d_ptr as *mut _ as *mut *mut c_void, size);
+            // Copy Fortran-order memory block
+            cudaMemcpy(
+                d_ptr as *mut c_void,
+                arr.data() as *const c_void,
+                size,
+                cudaMemcpyKind::cudaMemcpyHostToDevice,
+            );
+        }
+
+        Ok(Tensor {
+            ptr: d_ptr,
+            shape: (m, n),
+            device: "cuda".to_string(),
+            owns_memory: true,
+        })
     }
-    
+
     pub fn numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f32>> {
         let (m, n) = self.shape;
         let mut result = vec![0.0f32; m * n];
-        
+
         unsafe {
             cudaMemcpy(
                 result.as_mut_ptr() as *mut c_void,
                 self.ptr as *const c_void,
                 m * n * std::mem::size_of::<f32>(),
-                cudaMemcpyKind::cudaMemcpyDeviceToHost
+                cudaMemcpyKind::cudaMemcpyDeviceToHost,
             );
         }
-        
+
         let arr = ndarray::Array2::from_shape_vec((m, n), result)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
-        
+
         Ok(PyArray2::from_owned_array(py, arr))
     }
-    
+
     pub fn shape(&self) -> (usize, usize) {
         self.shape
     }
-    
+
     pub fn device(&self) -> String {
         self.device.clone()
     }
@@ -89,24 +93,9 @@ impl Tensor {
 impl Drop for Tensor {
     fn drop(&mut self) {
         if self.owns_memory && !self.ptr.is_null() && self.device == "cuda" {
-            #[cfg(target_os = "linux")]
-            {
-                use crate::backends::cuda::matmul::CUDA_CTX;
-                if let Some(ctx) = CUDA_CTX.get() {
-                    let (m, n) = self.shape;
-                    ctx.lock().unwrap().free(self.ptr, m, n);
-                    return;
-                }
-            }
-            
-            // Fallback: direct free
             unsafe {
-                use std::ffi::c_void;
-                use cuda_runtime_sys::cudaFree;
                 cudaFree(self.ptr as *mut c_void);
             }
         }
     }
 }
-
-
