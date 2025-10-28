@@ -38,7 +38,7 @@ def get_backends():
 
 def main():
     print("=== Matrix Multiplication Benchmark ===")
-    sizes = [256, 512, 1024, 2048]
+    sizes = [256, 512, 1024, 2048, 4096, 8192]
     for n in sizes:
         print(f"\n=== Size {n}x{n} ===")
         a = np.ascontiguousarray(np.random.rand(n, n), dtype=np.float32)

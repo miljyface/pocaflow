@@ -1,5 +1,5 @@
 use cuda_runtime_sys::{
-    cudaError_t, cudaStream_t, cudaStreamCreate, cudaStreamDestroy,
+    cudaError_t, cudaStreamCreate, cudaStreamDestroy,
     cudaMalloc, cudaFree, cudaMallocHost, cudaFreeHost,
     cudaMemcpyAsync, cudaMemcpyKind, cudaStreamSynchronize, CUstream_st
 };
@@ -42,7 +42,6 @@ impl CudaContext {
             let mut stream: *mut CUstream_st = ptr::null_mut();
             cuda_error_to_i32(cudaStreamCreate(&mut stream))?;
 
-            // Must cast CUstream_st to Struct_CUstream_st for cuBLAS
             cublas_error_to_i32(cublasSetStream_v2(
                 handle,
                 stream as *mut Struct_CUstream_st,
@@ -90,13 +89,11 @@ impl CudaContext {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
-            // cuBLAS expects column-major, but ndarray is row-major.
-            // Use transpose flags to reinterpret row-major as column-major.
             cublas_error_to_i32(
                 cublasSgemm_v2(
                     self.handle,
-                    cublasOperation_t::CUBLAS_OP_T, // transposes a
-                    cublasOperation_t::CUBLAS_OP_T, // transposes b
+                    cublasOperation_t::CUBLAS_OP_T, // transpose
+                    cublasOperation_t::CUBLAS_OP_T,
                     m as i32, n as i32, k as i32,
                     &alpha,
                     buffer_a as *const f32, k as i32,
