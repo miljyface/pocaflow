@@ -1,5 +1,13 @@
-use cuda_runtime_sys::{cudaError_t, cudaStream_t, cudaMalloc, cudaFree, cudaMemcpy, cudaMemcpyKind, cudaStreamCreate, cudaStreamSynchronize, cudaMallocHost, cudaFreeHost, cudaMemcpyAsync};
-use cublas_sys::{cublasHandle_t, cublasCreate_v2, cublasDestroy_v2, cublasSgemm_v2, cublasOperation_t, cublasStatus_t, cublasSetStream_v2};
+use cuda_runtime_sys::{
+    cudaError_t, cudaStream_t, cudaStreamCreate, cudaStreamDestroy,
+    cudaMalloc, cudaFree, cudaMallocHost, cudaFreeHost,
+    cudaMemcpyAsync, cudaMemcpyKind, cudaStreamSynchronize, CUstream_st
+};
+use cublas_sys::{
+    cublasHandle_t, cublasCreate_v2, cublasDestroy_v2,
+    cublasSgemm_v2, cublasSetStream_v2,
+    cublasOperation_t, cublasStatus_t, Struct_CUstream_st
+};
 use ndarray::Array2;
 use std::ptr;
 
@@ -22,7 +30,7 @@ fn cublas_error_to_i32(status: cublasStatus_t) -> Result<(), i32> {
 
 pub struct CudaContext {
     pub handle: cublasHandle_t,
-    pub stream: cudaStream_t,
+    pub stream: *mut CUstream_st,
 }
 
 impl CudaContext {
@@ -30,9 +38,16 @@ impl CudaContext {
         unsafe {
             let mut handle = ptr::null_mut();
             cublas_error_to_i32(cublasCreate_v2(&mut handle))?;
-            let mut stream = ptr::null_mut();
+
+            let mut stream: *mut CUstream_st = ptr::null_mut();
             cuda_error_to_i32(cudaStreamCreate(&mut stream))?;
-            cublas_error_to_i32(cublasSetStream_v2(handle, stream))?;
+
+            // Must cast CUstream_st to Struct_CUstream_st for cuBLAS
+            cublas_error_to_i32(cublasSetStream_v2(
+                handle,
+                stream as *mut Struct_CUstream_st,
+            ))?;
+
             Ok(CudaContext { handle, stream })
         }
     }
@@ -50,7 +65,6 @@ impl CudaContext {
             let mut buffer_a = ptr::null_mut();
             let mut buffer_b = ptr::null_mut();
             let mut buffer_c = ptr::null_mut();
-
             cuda_error_to_i32(cudaMalloc(&mut buffer_a as *mut _ as *mut *mut _, a_bytes))?;
             cuda_error_to_i32(cudaMalloc(&mut buffer_b as *mut _ as *mut *mut _, b_bytes))?;
             cuda_error_to_i32(cudaMalloc(&mut buffer_c as *mut _ as *mut *mut _, c_bytes))?;
@@ -58,16 +72,17 @@ impl CudaContext {
             let mut c_host: *mut f32 = ptr::null_mut();
             cuda_error_to_i32(cudaMallocHost(&mut c_host as *mut _ as *mut *mut _, c_bytes))?;
 
-            // Copy data to device (async)
             cuda_error_to_i32(cudaMemcpyAsync(
                 buffer_a,
-                a.as_ptr() as *const _, a_bytes,
+                a.as_ptr() as *const _,
+                a_bytes,
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 self.stream,
             ))?;
             cuda_error_to_i32(cudaMemcpyAsync(
                 buffer_b,
-                b.as_ptr() as *const _, b_bytes,
+                b.as_ptr() as *const _,
+                b_bytes,
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 self.stream,
             ))?;
@@ -75,19 +90,21 @@ impl CudaContext {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
-            // cuBLAS expects column-major: ndarray is row-major;
-            // So swap m/n and use transpose if needed: _OP_T
-            cublas_error_to_i32(cublasSgemm_v2(
-                self.handle,
-                cublasOperation_t::CUBLAS_OP_T, // transpose a
-                cublasOperation_t::CUBLAS_OP_T, // transpose b
-                m as i32, n as i32, k as i32,
-                &alpha,
-                buffer_a as *const f32, k as i32,
-                buffer_b as *const f32, n as i32,
-                &beta,
-                buffer_c as *mut f32, m as i32,
-            ))?;
+            // cuBLAS expects column-major, but ndarray is row-major.
+            // Use transpose flags to reinterpret row-major as column-major.
+            cublas_error_to_i32(
+                cublasSgemm_v2(
+                    self.handle,
+                    cublasOperation_t::CUBLAS_OP_T, // transposes a
+                    cublasOperation_t::CUBLAS_OP_T, // transposes b
+                    m as i32, n as i32, k as i32,
+                    &alpha,
+                    buffer_a as *const f32, k as i32,
+                    buffer_b as *const f32, n as i32,
+                    &beta,
+                    buffer_c as *mut f32, m as i32,
+                )
+            )?;
 
             cuda_error_to_i32(cudaMemcpyAsync(
                 c_host as *mut _,
@@ -96,11 +113,10 @@ impl CudaContext {
                 cudaMemcpyKind::cudaMemcpyDeviceToHost,
                 self.stream,
             ))?;
-
             cuda_error_to_i32(cudaStreamSynchronize(self.stream))?;
 
             let result = std::slice::from_raw_parts(c_host, m * n);
-            let output = Array2::from_shape_vec((m, n), result.to_vec()).expect("Shape should match");
+            let output = Array2::from_shape_vec((m, n), result.to_vec()).expect("CUDA result shape mismatch");
 
             cudaFree(buffer_a as *mut _);
             cudaFree(buffer_b as *mut _);
