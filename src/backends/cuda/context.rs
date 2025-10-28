@@ -124,9 +124,14 @@ impl CudaContext {
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, k as u64);
-            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, n as u64, k as u64, n as u64);
-            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, n as u64, m as u64, n as u64);
+            // Standard: A (m x k), B (k x n), C (m x n)
+            let lda = m as u64;
+            let ldb = k as u64;
+            let ldc = m as u64;
+
+            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, lda);
+            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, ldb);
+            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, ldc);
 
             let status = cublasLtMatmul(
                 self.handle,
