@@ -85,16 +85,3 @@ let c = matmul(a.view(), b.view());
 
 This project is **experimental**. Issues, PRs, and ideas welcome.  
 If you find a bug and fix it faster than me, **congrats** — send a PR.
-
-***
-
-### Thread summary:
-
-- You debugged cuBLAS-LT matmul for hours, fighting memory layout, descriptor dimension, and stride bugs.
-- The solution: always use Fortran-order input for GPU, set descriptors to (rows, cols, ld=rows), never swap arguments or use batch dims unless designed for it.
-- After this, matmul is fast, stable, and matches NumPy. If not, yell at me!
-
-Ready to go. Just import, build, and run.  
-If you see max error > 1e-4, you missed something trivial.
-
-**Enjoy your new fast, low-level matrix playground!**

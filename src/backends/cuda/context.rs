@@ -7,17 +7,24 @@ use std::sync::Mutex;
 #[repr(C)]
 pub struct cublasLtHandle_st { _unused: [u8; 0] }
 pub type cublasLtHandle_t = *mut cublasLtHandle_st;
-
 #[repr(C)]
 pub struct cublasLtMatmulDesc_st { _unused: [u8; 0] }
 pub type cublasLtMatmulDesc_t = *mut cublasLtMatmulDesc_st;
-
 #[repr(C)]
 pub struct cublasLtMatrixLayout_st { _unused: [u8; 0] }
 pub type cublasLtMatrixLayout_t = *mut cublasLtMatrixLayout_st;
 
-#[link(name = "cublasLt")]
+const CUBLASLT_MATMUL_DESC_TRANSA: u32 = 0;
+const CUBLASLT_MATMUL_DESC_TRANSB: u32 = 1;
+const CUBLAS_OP_N: u8 = 0;
+
 extern "C" {
+    fn cublasLtMatmulDescSetAttribute(
+        desc: cublasLtMatmulDesc_t,
+        attr: u32,
+        buf: *const c_void,
+        sizeInBytes: usize,
+    ) -> i32;
     fn cublasLtCreate(handle: *mut cublasLtHandle_t) -> i32;
     fn cublasLtDestroy(handle: cublasLtHandle_t) -> i32;
     fn cublasLtMatmul(
@@ -38,7 +45,7 @@ const CUDA_R_32F: i32 = 0;
 type CudaStream = *mut CUstream_st;
 
 pub struct MemoryPool {
-    pool: VecDeque<(*mut f32, usize, usize)>,  // (ptr, m, n)
+    pool: VecDeque<(*mut f32, usize, usize)>,
     max_size: usize,
 }
 
@@ -46,9 +53,7 @@ impl MemoryPool {
     fn new(max_size: usize) -> Self {
         MemoryPool { pool: VecDeque::new(), max_size }
     }
-    
     fn get(&mut self, m: usize, n: usize) -> *mut f32 {
-        // Try to find matching buffer
         for i in 0..self.pool.len() {
             let (ptr, pm, pn) = self.pool[i];
             if pm == m && pn == n {
@@ -56,15 +61,12 @@ impl MemoryPool {
                 return ptr;
             }
         }
-        
-        // Allocate new
         unsafe {
             let mut ptr: *mut f32 = ptr::null_mut();
             cudaMalloc(&mut ptr as *mut _ as *mut *mut c_void, m * n * 4);
             ptr
         }
     }
-    
     fn release(&mut self, ptr: *mut f32, m: usize, n: usize) {
         if self.pool.len() < self.max_size {
             self.pool.push_back((ptr, m, n));
@@ -73,7 +75,6 @@ impl MemoryPool {
         }
     }
 }
-
 impl Drop for MemoryPool {
     fn drop(&mut self) {
         unsafe {
@@ -91,7 +92,6 @@ pub struct CudaContext {
     pub workspace_size: usize,
     pub mem_pool: Mutex<MemoryPool>,
 }
-
 unsafe impl Send for CudaContext {}
 unsafe impl Sync for CudaContext {}
 
@@ -102,7 +102,6 @@ impl CudaContext {
             if cublasLtCreate(&mut handle) != 0 {
                 return Err("cublasLtCreate failed".into());
             }
-
             let mut streams = Vec::new();
             for _ in 0..n_streams {
                 let mut stream = ptr::null_mut();
@@ -111,55 +110,62 @@ impl CudaContext {
                 }
                 streams.push(stream);
             }
-
             let mut workspace = ptr::null_mut();
             if cudaMalloc(&mut workspace, workspace_size) != cudaError_t::cudaSuccess {
                 return Err("workspace malloc failed".into());
             }
-
             Ok(CudaContext {
                 handle,
                 streams,
                 workspace,
                 workspace_size,
-                mem_pool: Mutex::new(MemoryPool::new(10)),  // Keep 10 buffers max
+                mem_pool: Mutex::new(MemoryPool::new(10)),
             })
         }
     }
-    
     pub fn alloc(&self, m: usize, n: usize) -> *mut f32 {
         self.mem_pool.lock().unwrap().get(m, n)
     }
-    
     pub fn free(&self, ptr: *mut f32, m: usize, n: usize) {
         self.mem_pool.lock().unwrap().release(ptr, m, n);
     }
-
     pub fn matmul_f32_gpu(&mut self, d_a: *const f32, d_b: *const f32, d_c: *mut f32,
-                      m: usize, n: usize, k: usize, stream_idx: usize) -> Result<(), String> {
+                         m: usize, n: usize, k: usize, stream_idx: usize) -> Result<(), String> {
         let stream = self.streams[stream_idx % self.streams.len()];
         unsafe {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
-
             let mut operationDesc = ptr::null_mut();
             if cublasLtMatmulDescCreate(&mut operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F) != 0 {
                 return Err("matmulDescCreate failed".into());
             }
+            // Explicitly set op(A) and op(B) to "no transpose"
+            let op_none: u8 = 0;
+            if cublasLtMatmulDescSetAttribute(
+                operationDesc,
+                CUBLASLT_MATMUL_DESC_TRANSA,
+                &op_none as *const _ as *const c_void,
+                1,
+            ) != 0 {
+                return Err("MatmulDescSetAttribute TRANSA failed".into());
+            }
+            if cublasLtMatmulDescSetAttribute(
+                operationDesc,
+                CUBLASLT_MATMUL_DESC_TRANSB,
+                &op_none as *const _ as *const c_void,
+                1,
+            ) != 0 {
+                return Err("MatmulDescSetAttribute TRANSB failed".into());
+            }
             let mut Adesc = ptr::null_mut();
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
-
-            // FIX: These must match Fortran-order!
             cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, m as u64);
             cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
             cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
-
-            // Debug print for trace
             println!("A: {:p}, shape=({},{}), ld={}", d_a, m, k, m);
             println!("B: {:p}, shape=({},{}), ld={}", d_b, k, n, k);
             println!("C: {:p}, shape=({},{}), ld={}", d_c, m, n, m);
-
             let status = cublasLtMatmul(
                 self.handle, operationDesc,
                 &alpha as *const f32 as *const c_void,
@@ -170,13 +176,11 @@ impl CudaContext {
                 d_c as *mut c_void, Cdesc,
                 ptr::null(), self.workspace, self.workspace_size, stream,
             );
-
             cudaStreamSynchronize(stream);
             cublasLtMatmulDescDestroy(operationDesc);
             cublasLtMatrixLayoutDestroy(Adesc);
             cublasLtMatrixLayoutDestroy(Bdesc);
             cublasLtMatrixLayoutDestroy(Cdesc);
-
             if status != 0 {
                 Err(format!("cublasLtMatmul failed: {}", status))
             } else {
@@ -185,7 +189,6 @@ impl CudaContext {
         }
     }
 }
-
 impl Drop for CudaContext {
     fn drop(&mut self) {
         unsafe {
