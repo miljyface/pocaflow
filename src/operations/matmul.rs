@@ -8,19 +8,17 @@ use crate::operations::experimental::metal_matmul::metal_matmul_f32 as gpu_matmu
 #[cfg(target_os = "linux")]
 use crate::operations::experimental::cuda_matmul::cuda_matmul_f32 as gpu_matmul_f32;
 
+// GPU matmul entry (returns a PyArray2<f32> directly)
 #[pyfunction]
 pub fn matmul<'py>(
     py: Python<'py>,
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
-) -> PyResult<Py<PyArray2<f32>>> {
-    let a_any: &pyo3::PyAny = a.as_ref();
-    let b_any: &pyo3::PyAny = b.as_ref();
-    let obj = gpu_matmul_f32(py, a_any, b_any)?;
-    obj.extract::<Py<PyArray2<f32>>>(py)
+) -> PyResult<&'py PyArray2<f32>> {
+    gpu_matmul_f32(py, a, b)
 }
 
-
+// CPU fallback, returns a reference to PyArray2<f32>
 #[pyfunction]
 pub fn matmul_f32_cpu<'py>(
     py: Python<'py>,
@@ -30,6 +28,7 @@ pub fn matmul_f32_cpu<'py>(
     Ok(PyArray2::from_owned_array(py, sgemm(a.as_array(), b.as_array())))
 }
 
+// CPU double precision fallback
 #[pyfunction]
 pub fn matmul_f64<'py>(
     py: Python<'py>,
