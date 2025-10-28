@@ -18,11 +18,11 @@ for size in sizes:
     
     print(f"\n[{m}x{k}] @ [{k}x{n}]")
     
-    # Fresh data each iteration
+    # Create data
     a_np = np.random.randn(m, k).astype(np.float32)
     b_np = np.random.randn(k, n).astype(np.float32)
     
-    # Rust: Fresh tensors
+    # Rust GPU tensors
     a_rust = pf.Tensor.from_array(a_np, device="cuda")
     b_rust = pf.Tensor.from_array(b_np, device="cuda")
     
@@ -69,3 +69,9 @@ for size in sizes:
     print(f"Speedup: {torch_time/rust_time:.2f}x  |  Error: {error:.2e}")
 
 print("\n" + "="*70)
+print("Testing NumPy fallback...")
+a_np_small = np.random.randn(64, 64).astype(np.float32)
+b_np_small = np.random.randn(64, 64).astype(np.float32)
+c_np_small = pf.matmul(a_np_small, b_np_small)
+print(f"✓ NumPy matmul works: {c_np_small.shape}")
+print("="*70)
