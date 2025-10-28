@@ -1,23 +1,15 @@
 import pocaflow as pf
 import numpy as np
 
-# Matrix sizes
-m, k, n = 1024, 1024, 1024
+print("===== pocaflow GPU matmul demo =====")
+a = np.asfortranarray(np.random.randn(1024, 1024).astype(np.float32))
+b = np.asfortranarray(np.random.randn(1024, 1024).astype(np.float32))
 
-# Always use Fortran-order for best performance!
-a_np = np.asfortranarray(np.random.randn(m, k).astype(np.float32))
-b_np = np.asfortranarray(np.random.randn(k, n).astype(np.float32))
+print("[NPY] a (F-order) first 8:", a.flatten(order='F')[:8])
+print("[NPY] b (F-order) first 8:", b.flatten(order='F')[:8])
 
-# Create pocaflow tensors
-a_tensor = pf.Tensor.from_array(a_np, device="cuda")
-b_tensor = pf.Tensor.from_array(b_np, device="cuda")
-
-# Perform cuBLAS-LT matmul
-c_tensor = pf.matmul(a_tensor, b_tensor)
-
-# Copy back to CPU
-c_np = c_tensor.numpy()
-
-# Validate against NumPy
-c_ref = a_np @ b_np
-print("Max error (should be <1e-4):", np.abs(c_np - c_ref).max())
+ta = pf.Tensor.from_array(a, device=0)  # device index = 0
+tb = pf.Tensor.from_array(b, device=0)
+tc = pf.matmul(ta, tb)
+c = tc.numpy()
+print("Max error vs NumPy:", np.abs(c - (a @ b)).max())
