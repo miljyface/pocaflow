@@ -17,6 +17,22 @@ pub struct CudaContext {
     pub buffer_size_c: usize,
 }
 
+fn cuda_error_to_i32(status: cudaError_t) -> Result<(), i32> {
+    if status != cudaError_t::cudaSuccess {
+        Err(status as i32)
+    } else {
+        Ok(())
+    }
+}
+
+fn cublas_error_to_i32(status: cublasStatus_t) -> Result<(), i32> {
+    if status != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
+        Err(status as i32)
+    } else {
+        Ok(())
+    }
+}
+
 unsafe impl Send for CudaContext {}
 unsafe impl Sync for CudaContext {}
 
@@ -72,7 +88,7 @@ impl CudaContext {
         }
     }
 
-    pub fn matmul_f32_stream(
+    pub fn matmul_f32(
         &mut self,
         a: &Array2<f32>,
         b: &Array2<f32>,

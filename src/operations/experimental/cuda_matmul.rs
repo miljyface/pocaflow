@@ -24,10 +24,13 @@ pub fn cuda_matmul_f32<'py>(
     let max_b_elems = k * n;
     let max_c_elems = m * n;
 
+    let n_streams = 4;
+    let workspace_size = 128 * 1024 * 1024;
+
     // Persistent CUDA context for performance
     let ctx = CUDA_CTX.get_or_init(|| {
         let initial_size = 4096 * 4096;
-        Mutex::new(CudaContext::new(initial_size, initial_size, initial_size)
+        Mutex::new(CudaContext::new(initial_size, initial_size, initial_size, n_streams, workspace_size)
             .expect("Failed to initialize CUDA context"))
     });
 
