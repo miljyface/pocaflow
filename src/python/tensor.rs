@@ -1,6 +1,11 @@
 use pyo3::prelude::*;
 use numpy::{PyArray2, PyReadonlyArray2};
 use std::sync::Arc;
+use std::ptr;
+use std::ffi::c_void;
+
+#[cfg(target_os = "linux")]
+use cuda_runtime_sys::{cudaMalloc, cudaFree, cudaMemcpy, cudaMemcpyKind, cudaError_t};
 
 #[pyclass]
 #[derive(Clone)]
@@ -23,19 +28,22 @@ impl Tensor {
         
         if device == "cuda" {
             unsafe {
-                let mut ptr: *mut f32 = std::ptr::null_mut();
+                let mut ptr: *mut f32 = ptr::null_mut();
                 let size = m * n * std::mem::size_of::<f32>();
                 
-                cuda_runtime_sys::cudaMalloc(
-                    &mut ptr as *mut _ as *mut *mut std::ffi::c_void,
+                let ret = cudaMalloc(
+                    &mut ptr as *mut _ as *mut *mut c_void,
                     size
                 );
+                if ret != cudaError_t::cudaSuccess {
+                    return Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("cudaMalloc failed"));
+                }
                 
-                cuda_runtime_sys::cudaMemcpy(
-                    ptr as *mut std::ffi::c_void,
-                    arr.as_ptr() as *const std::ffi::c_void,
+                cudaMemcpy(
+                    ptr as *mut c_void,
+                    arr.as_ptr() as *const c_void,
                     size,
-                    cuda_runtime_sys::cudaMemcpyKind::cudaMemcpyHostToDevice
+                    cudaMemcpyKind::cudaMemcpyHostToDevice
                 );
                 
                 Ok(Tensor {
@@ -55,11 +63,11 @@ impl Tensor {
         let mut result = vec![0.0f32; m * n];
         
         unsafe {
-            cuda_runtime_sys::cudaMemcpy(
-                result.as_mut_ptr() as *mut std::ffi::c_void,
-                self.ptr as *const std::ffi::c_void,
+            cudaMemcpy(
+                result.as_mut_ptr() as *mut c_void,
+                self.ptr as *const c_void,
                 m * n * std::mem::size_of::<f32>(),
-                cuda_runtime_sys::cudaMemcpyKind::cudaMemcpyDeviceToHost
+                cudaMemcpyKind::cudaMemcpyDeviceToHost
             );
         }
         
@@ -82,7 +90,7 @@ impl Drop for Tensor {
     fn drop(&mut self) {
         if self.owns_memory && !self.ptr.is_null() {
             unsafe {
-                cuda_runtime_sys::cudaFree(self.ptr as *mut std::ffi::c_void);
+                cudaFree(self.ptr as *mut c_void);
             }
         }
     }
