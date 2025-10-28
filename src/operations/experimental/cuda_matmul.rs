@@ -4,7 +4,7 @@ use crate::gpu::CudaContext;
 use std::sync::OnceLock;
 use std::sync::Mutex;
 
-// Global context with OnceLock for better performance
+// Safe static context for Rust
 static CUDA_CTX: OnceLock<Mutex<CudaContext>> = OnceLock::new();
 
 #[pyfunction]
@@ -13,18 +13,18 @@ pub fn cuda_matmul_f32<'py>(
     a: &PyAny,
     b: &PyAny,
 ) -> PyResult<PyObject> {
-    // Check if inputs are already CUDA tensors
-    let a_device = a.getattr("device")?.str()?.to_string();
-    let b_device = b.getattr("device")?.str()?.to_string();
+    // Check for PyTorch CUDA tensors (fast path)
+    let a_device = a.getattr("device").and_then(|dev| dev.str()).unwrap_or("<cpu>").to_string();
+    let b_device = b.getattr("device").and_then(|dev| dev.str()).unwrap_or("<cpu>").to_string();
 
     if a_device.contains("cuda") && b_device.contains("cuda") {
-        // FAST PATH: Already on GPU, use PyTorch's matmul
+        // Use PyTorch native matmul for CUDA tensors
         let torch = py.import("torch")?;
         let result = torch.call_method1("matmul", (a, b))?;
         return Ok(result.into());
     }
 
-    // SLOW PATH: CPU tensors, use our CUDA backend
+    // Slow path: expects numpy arrays/tensors convertible to f32 array
     let a_array = a.extract::<PyReadonlyArray2<f32>>()?;
     let b_array = b.extract::<PyReadonlyArray2<f32>>()?;
 
@@ -34,14 +34,11 @@ pub fn cuda_matmul_f32<'py>(
     let m = a_owned.shape()[0];
     let k = a_owned.shape()[1];
     let n = b_owned.shape()[1];
-
     let max_a_elems = m * k;
     let max_b_elems = k * n;
     let max_c_elems = m * n;
 
-    // Initialize or get global context
     let ctx = CUDA_CTX.get_or_init(|| {
-        // Pre-allocate for 4096x4096 matrices
         let initial_size = 4096 * 4096;
         Mutex::new(
             CudaContext::new(initial_size, initial_size, initial_size)
@@ -49,7 +46,6 @@ pub fn cuda_matmul_f32<'py>(
         )
     });
 
-    // Perform matrix multiplication
     let result = {
         let mut ctx_guard = ctx.lock().map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(

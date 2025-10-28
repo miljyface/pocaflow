@@ -6,10 +6,11 @@ use cuda_runtime_sys::{
 };
 use cublas_sys::{
     cublasHandle_t, cublasCreate_v2, cublasDestroy_v2,
-    cublasSgemm_v2, cublasSetStream_v2, cublasSetMathMode,
-    cublasOperation_t, cublasStatus_t, cublasMath_t,
+    cublasSgemm_v2, cublasSetStream_v2,
+    cublasOperation_t, cublasStatus_t,
     Struct_CUstream_st
 };
+// DO NOT import cublasSetMathMode or cublasMath_t; not provided in cublas-sys.
 use ndarray::Array2;
 use std::ptr;
 use std::ffi::c_void;
@@ -42,18 +43,16 @@ pub struct CudaContext {
     pub buffer_size_c: usize,
 }
 
+// To allow use in OnceLock/Mutex
+unsafe impl Send for CudaContext {}
+unsafe impl Sync for CudaContext {}
+
 impl CudaContext {
     pub fn new(max_a_elems: usize, max_b_elems: usize, max_c_elems: usize) -> Result<Self, i32> {
         unsafe {
             // Create cuBLAS handle
             let mut handle = ptr::null_mut();
             cublas_error_to_i32(cublasCreate_v2(&mut handle))?;
-
-            // Enable Tensor Core operations for better performance
-            cublas_error_to_i32(cublasSetMathMode(
-                handle,
-                cublasMath_t::CUBLAS_TENSOR_OP_MATH,
-            ))?;
 
             // Create CUDA stream
             let mut stream: *mut CUstream_st = ptr::null_mut();
@@ -124,7 +123,6 @@ impl CudaContext {
         }
     }
 
-    /// Optimized matrix multiplication using cuBLAS with TensorCore support
     pub fn matmul_f32(&mut self, a: &Array2<f32>, b: &Array2<f32>) -> Result<Array2<f32>, i32> {
         let (m, k) = a.dim();
         let (k2, n) = b.dim();
@@ -140,7 +138,6 @@ impl CudaContext {
         self.ensure_capacity(a_elems, b_elems, c_elems)?;
 
         unsafe {
-            // Async copy A to GPU
             cuda_error_to_i32(cudaMemcpyAsync(
                 self.buffer_a as *mut c_void,
                 a.as_ptr() as *const c_void,
@@ -149,7 +146,6 @@ impl CudaContext {
                 self.stream
             ))?;
 
-            // Async copy B to GPU
             cuda_error_to_i32(cudaMemcpyAsync(
                 self.buffer_b as *mut c_void,
                 b.as_ptr() as *const c_void,
@@ -158,33 +154,28 @@ impl CudaContext {
                 self.stream
             ))?;
 
-            // cuBLAS SGEMM: C = alpha * A * B + beta * C
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
-            // cuBLAS uses column-major, so we swap A and B
-            // Result: C^T = B^T * A^T
             cublas_error_to_i32(cublasSgemm_v2(
                 self.handle,
                 cublasOperation_t::CUBLAS_OP_N,
                 cublasOperation_t::CUBLAS_OP_N,
-                n as i32,      // rows of B^T (cols of B)
-                m as i32,      // cols of A^T (rows of A)
-                k as i32,      // cols of B^T = rows of A^T
+                n as i32,
+                m as i32,
+                k as i32,
                 &alpha,
                 self.buffer_b as *const f32,
-                n as i32,      // leading dimension of B
+                n as i32,
                 self.buffer_a as *const f32,
-                k as i32,      // leading dimension of A
+                k as i32,
                 &beta,
                 self.buffer_c as *mut f32,
-                n as i32,      // leading dimension of C
+                n as i32,
             ))?;
 
-            // Allocate result vector
             let mut result = vec![0.0f32; c_elems];
 
-            // Async copy result back to host
             cuda_error_to_i32(cudaMemcpyAsync(
                 result.as_mut_ptr() as *mut c_void,
                 self.buffer_c as *const c_void,
@@ -193,10 +184,7 @@ impl CudaContext {
                 self.stream
             ))?;
 
-            // Record event instead of stream sync
             cuda_error_to_i32(cudaEventRecord(self.event, self.stream))?;
-
-            // Synchronize on event (more efficient than stream sync)
             cuda_error_to_i32(cudaEventSynchronize(self.event))?;
 
             Ok(Array2::from_shape_vec((m, n), result).expect("Shape mismatch"))
