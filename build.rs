@@ -18,6 +18,11 @@ fn build_cuda() {
     
     let arch = detect_gpu_arch();
     
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+    let kernel_path = format!("{}/kernels/cuda/matmul_kernel.cu", manifest_dir);
+
+    assert!(std::path::Path::new(&kernel_path).exists(), "Kernel file not found: {:?}", kernel_path);
+
     cc::Build::new()
         .cuda(true)
         .flag(&format!("-arch={}", arch))
@@ -25,7 +30,7 @@ fn build_cuda() {
         .flag("--use_fast_math")
         .flag("-Xcompiler")
         .flag("-fPIC")
-        .file("kernels/cuda/matmul_kernel.cu")
+        .file(&kernel_path)
         .compile("matmul_kernel");
     
     println!("cargo:rustc-link-search=native={}/lib64", cuda_path);
