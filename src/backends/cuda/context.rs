@@ -1,220 +1,151 @@
-use cuda_runtime_sys::{cudaError_t, cudaMemcpyKind, cudaMalloc, cudaFree, 
-                       cudaMemcpyAsync, cudaStreamCreate, cudaStreamDestroy, 
-                       cudaStreamSynchronize};
-use cublas_sys::{cublasHandle_t, cublasStatus_t, cublasCreate_v2, 
-                  cublasDestroy_v2, cublasSetStream_v2, cublasSgemm_v2, 
-                  cublasOperation_t};
-use ndarray::Array2;
+use cuda_runtime_sys::*;
 use std::ptr;
 use std::ffi::c_void;
+use std::collections::HashMap;
+use std::sync::Mutex;
 
-// Use explicit type from cuda_runtime_sys to avoid ambiguity
-type CudaStream = *mut cuda_runtime_sys::CUstream_st;
-
-#[inline]
-fn cuda_error_to_string(status: cudaError_t) -> Result<(), String> {
-    if status != cudaError_t::cudaSuccess {
-        Err(format!("CUDA error: {:?}", status))
-    } else {
-        Ok(())
-    }
+// cuBLAS-LT FFI bindings
+#[link(name = "cublasLt")]
+extern "C" {
+    fn cublasLtCreate(handle: *mut *mut c_void) -> i32;
+    fn cublasLtDestroy(handle: *mut c_void) -> i32;
+    fn cublasLtMatmul(
+        handle: *mut c_void,
+        computeDesc: *mut c_void,
+        alpha: *const c_void,
+        A: *const c_void, Adesc: *mut c_void,
+        B: *const c_void, Bdesc: *mut c_void,
+        beta: *const c_void,
+        C: *mut c_void, Cdesc: *mut c_void,
+        D: *mut c_void, Ddesc: *mut c_void,
+        algo: *const c_void,
+        workspace: *mut c_void,
+        workspaceSize: usize,
+        stream: cudaStream_t,
+    ) -> i32;
+    fn cublasLtMatmulDescCreate(desc: *mut *mut c_void, computeType: i32, scaleType: i32) -> i32;
+    fn cublasLtMatrixLayoutCreate(layout: *mut *mut c_void, dtype: i32, rows: u64, cols: u64, ld: u64) -> i32;
 }
 
-#[inline]
-fn cublas_error_to_string(status: cublasStatus_t) -> Result<(), String> {
-    if status != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
-        Err(format!("cuBLAS error: {:?}", status))
-    } else {
-        Ok(())
+const CUBLAS_COMPUTE_32F_FAST_TF32: i32 = 4119;
+const CUDA_R_32F: i32 = 0;
+
+type CudaStream = *mut CUstream_st;
+
+pub struct CudaGraphCache {
+    graphs: HashMap<(usize, usize, usize), (*mut c_void, *mut c_void)>,
+}
+
+impl CudaGraphCache {
+    pub fn new() -> Self {
+        CudaGraphCache {
+            graphs: HashMap::new(),
+        }
+    }
+
+    pub fn get_or_create(
+        &mut self,
+        m: usize, n: usize, k: usize,
+        create_fn: impl FnOnce() -> (*mut c_void, *mut c_void)
+    ) -> (*mut c_void, *mut c_void) {
+        *self.graphs.entry((m, n, k)).or_insert_with(create_fn)
     }
 }
 
 pub struct CudaContext {
-    pub handle: cublasHandle_t,
+    pub handle: *mut c_void,
     pub streams: Vec<CudaStream>,
-    pub buffer_a: *mut f32,
-    pub buffer_b: *mut f32,
-    pub buffer_c: *mut f32,
-    pub buffer_size_a: usize,
-    pub buffer_size_b: usize,
-    pub buffer_size_c: usize,
+    pub workspace: *mut c_void,
+    pub workspace_size: usize,
+    pub graph_cache: Mutex<CudaGraphCache>,
 }
 
 unsafe impl Send for CudaContext {}
 unsafe impl Sync for CudaContext {}
 
 impl CudaContext {
-    pub fn new(
-        max_a_elems: usize,
-        max_b_elems: usize,
-        max_c_elems: usize,
-        n_streams: usize,
-        _workspace_size: usize,
-    ) -> Result<Self, String> {
+    pub fn new(n_streams: usize, workspace_size: usize) -> Result<Self, String> {
         unsafe {
-            // Create cuBLAS handle
             let mut handle = ptr::null_mut();
-            cublas_error_to_string(cublasCreate_v2(&mut handle))?;
+            if cublasLtCreate(&mut handle) != 0 {
+                return Err("Failed to create cuBLASLt handle".into());
+            }
 
-            // Create CUDA streams
             let mut streams = Vec::with_capacity(n_streams);
             for _ in 0..n_streams {
-                let mut stream: CudaStream = ptr::null_mut();
-                cuda_error_to_string(cudaStreamCreate(&mut stream))?;
+                let mut stream = ptr::null_mut();
+                if cudaStreamCreate(&mut stream) != cudaError_t::cudaSuccess {
+                    return Err("Failed to create CUDA stream".into());
+                }
                 streams.push(stream);
             }
 
-            // Allocate GPU buffers
-            let mut buffer_a = ptr::null_mut();
-            let mut buffer_b = ptr::null_mut();
-            let mut buffer_c = ptr::null_mut();
-
-            let buffer_size_a = max_a_elems * std::mem::size_of::<f32>();
-            let buffer_size_b = max_b_elems * std::mem::size_of::<f32>();
-            let buffer_size_c = max_c_elems * std::mem::size_of::<f32>();
-
-            cuda_error_to_string(cudaMalloc(
-                &mut buffer_a as *mut _ as *mut *mut c_void,
-                buffer_size_a
-            ))?;
-            cuda_error_to_string(cudaMalloc(
-                &mut buffer_b as *mut _ as *mut *mut c_void,
-                buffer_size_b
-            ))?;
-            cuda_error_to_string(cudaMalloc(
-                &mut buffer_c as *mut _ as *mut *mut c_void,
-                buffer_size_c
-            ))?;
+            let mut workspace = ptr::null_mut();
+            if cudaMalloc(&mut workspace, workspace_size) != cudaError_t::cudaSuccess {
+                return Err("Failed to allocate workspace".into());
+            }
 
             Ok(CudaContext {
                 handle,
                 streams,
-                buffer_a,
-                buffer_b,
-                buffer_c,
-                buffer_size_a,
-                buffer_size_b,
-                buffer_size_c,
+                workspace,
+                workspace_size,
+                graph_cache: Mutex::new(CudaGraphCache::new()),
             })
         }
     }
 
-    pub fn ensure_capacity(&mut self, need_a: usize, need_b: usize, need_c: usize) -> Result<(), String> {
-        unsafe {
-            let size_a = need_a * std::mem::size_of::<f32>();
-            let size_b = need_b * std::mem::size_of::<f32>();
-            let size_c = need_c * std::mem::size_of::<f32>();
-
-            if size_a > self.buffer_size_a {
-                cudaFree(self.buffer_a as *mut c_void);
-                cuda_error_to_string(cudaMalloc(
-                    &mut self.buffer_a as *mut _ as *mut *mut c_void,
-                    size_a
-                ))?;
-                self.buffer_size_a = size_a;
-            }
-
-            if size_b > self.buffer_size_b {
-                cudaFree(self.buffer_b as *mut c_void);
-                cuda_error_to_string(cudaMalloc(
-                    &mut self.buffer_b as *mut _ as *mut *mut c_void,
-                    size_b
-                ))?;
-                self.buffer_size_b = size_b;
-            }
-
-            if size_c > self.buffer_size_c {
-                cudaFree(self.buffer_c as *mut c_void);
-                cuda_error_to_string(cudaMalloc(
-                    &mut self.buffer_c as *mut _ as *mut *mut c_void,
-                    size_c
-                ))?;
-                self.buffer_size_c = size_c;
-            }
-
-            Ok(())
-        }
-    }
-
-    pub fn matmul_f32(&mut self, a: &Array2<f32>, b: &Array2<f32>, stream_idx: usize) -> Result<Array2<f32>, String> {
+    pub fn matmul_f32_gpu(
+        &mut self,
+        d_a: *const f32, d_b: *const f32, d_c: *mut f32,
+        m: usize, n: usize, k: usize,
+        stream_idx: usize
+    ) -> Result<(), String> {
         let stream = self.streams[stream_idx % self.streams.len()];
-        let (m, k) = a.dim();
-        let (k2, n) = b.dim();
-
-        if k != k2 {
-            return Err(format!("Matrix dimension mismatch: k={}, k2={}", k, k2));
-        }
-
-        let a_elems = m * k;
-        let b_elems = k * n;
-        let c_elems = m * n;
-
-        let a_bytes = a_elems * std::mem::size_of::<f32>();
-        let b_bytes = b_elems * std::mem::size_of::<f32>();
-        let c_bytes = c_elems * std::mem::size_of::<f32>();
-
-        self.ensure_capacity(a_elems, b_elems, c_elems)?;
-
+        
         unsafe {
-            // Copy input matrices to GPU
-            cuda_error_to_string(cudaMemcpyAsync(
-                self.buffer_a as *mut c_void,
-                a.as_ptr() as *const c_void,
-                a_bytes,
-                cudaMemcpyKind::cudaMemcpyHostToDevice,
-                stream,
-            ))?;
-
-            cuda_error_to_string(cudaMemcpyAsync(
-                self.buffer_b as *mut c_void,
-                b.as_ptr() as *const c_void,
-                b_bytes,
-                cudaMemcpyKind::cudaMemcpyHostToDevice,
-                stream,
-            ))?;
-
-            // Configure cuBLAS
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
-            // Cast stream to cublas-compatible type
-            cublas_error_to_string(cublasSetStream_v2(
-                self.handle, 
-                stream as *mut _ 
-            ))?;
+            let mut computeDesc = ptr::null_mut();
+            if cublasLtMatmulDescCreate(
+                &mut computeDesc,
+                CUBLAS_COMPUTE_32F_FAST_TF32,
+                CUDA_R_32F
+            ) != 0 {
+                return Err("Failed to create matmul descriptor".into());
+            }
 
+            let mut Adesc = ptr::null_mut();
+            let mut Bdesc = ptr::null_mut();
+            let mut Cdesc = ptr::null_mut();
 
-            // cuBLAS uses column-major, so swap A and B
-            cublas_error_to_string(cublasSgemm_v2(
+            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, k as u64);
+            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, n as u64, k as u64, n as u64);
+            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, n as u64, m as u64, n as u64);
+
+            let status = cublasLtMatmul(
                 self.handle,
-                cublasOperation_t::CUBLAS_OP_N,
-                cublasOperation_t::CUBLAS_OP_N,
-                n as i32,
-                m as i32,
-                k as i32,
-                &alpha,
-                self.buffer_b as *const f32,
-                n as i32,
-                self.buffer_a as *const f32,
-                k as i32,
-                &beta,
-                self.buffer_c as *mut f32,
-                n as i32,
-            ))?;
-
-            // Copy result back to host
-            let mut result = vec![0.0f32; c_elems];
-            cuda_error_to_string(cudaMemcpyAsync(
-                result.as_mut_ptr() as *mut c_void,
-                self.buffer_c as *const c_void,
-                c_bytes,
-                cudaMemcpyKind::cudaMemcpyDeviceToHost,
+                computeDesc,
+                &alpha as *const f32 as *const c_void,
+                d_a as *const c_void, Adesc,
+                d_b as *const c_void, Bdesc,
+                &beta as *const f32 as *const c_void,
+                d_c as *mut c_void, Cdesc,
+                d_c as *mut c_void, Cdesc,
+                ptr::null(),
+                self.workspace,
+                self.workspace_size,
                 stream,
-            ))?;
+            );
 
-            cuda_error_to_string(cudaStreamSynchronize(stream))?;
+            cudaStreamSynchronize(stream);
 
-            Ok(Array2::from_shape_vec((m, n), result).expect("Shape mismatch"))
+            if status != 0 {
+                Err(format!("cuBLASLt matmul failed: {}", status))
+            } else {
+                Ok(())
+            }
         }
     }
 }
@@ -222,13 +153,11 @@ impl CudaContext {
 impl Drop for CudaContext {
     fn drop(&mut self) {
         unsafe {
-            cudaFree(self.buffer_a as *mut c_void);
-            cudaFree(self.buffer_b as *mut c_void);
-            cudaFree(self.buffer_c as *mut c_void);
-            cublasDestroy_v2(self.handle);
+            cudaFree(self.workspace);
             for &stream in &self.streams {
                 cudaStreamDestroy(stream);
             }
+            cublasLtDestroy(self.handle);
         }
     }
 }

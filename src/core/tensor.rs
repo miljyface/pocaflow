@@ -1,5 +1,11 @@
 use super::{DType, Shape, Stride};
 use std::sync::Arc;
+use std::ptr;
+
+#[cfg(target_os = "linux")]
+use cuda_runtime_sys::{cudaMalloc, cudaFree, cudaMemset, cudaMemcpy, 
+                       cudaMemcpyKind, cudaError_t};
+use std::ffi::c_void;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Device {
@@ -32,13 +38,13 @@ pub enum Storage {
     },
     #[cfg(target_os = "linux")]
     CUDA {
-        ptr: *mut std::ffi::c_void,
+        ptr: *mut c_void,
         size: usize,
         device: usize,
     },
     #[cfg(target_os = "macos")]
     Metal {
-        ptr: *mut std::ffi::c_void,
+        ptr: *mut c_void,
         size: usize,
         device: usize,
     },
@@ -56,27 +62,21 @@ impl Storage {
 
     #[cfg(target_os = "linux")]
     pub fn new_cuda(size: usize, device: usize) -> Result<Self, String> {
-        use std::ffi::c_void;
-        use cuda_runtime_sys::cudaError;
-        
         unsafe {
             let ret = cuda_runtime_sys::cudaSetDevice(device as i32);
-            if ret != cudaError::cudaSuccess {
+            if ret != cudaError_t::cudaSuccess {
                 return Err(format!("cudaSetDevice failed: {:?}", ret));
             }
-        }
-        
-        let mut ptr: *mut c_void = std::ptr::null_mut();
-        unsafe {
-            let ret = cuda_runtime_sys::cudaMalloc(&mut ptr as *mut *mut c_void, size);
-            if ret != cudaError::cudaSuccess || ptr.is_null() {
+
+            let mut ptr: *mut c_void = ptr::null_mut();
+            let ret = cudaMalloc(&mut ptr, size);
+            if ret != cudaError_t::cudaSuccess || ptr.is_null() {
                 return Err(format!("cudaMalloc failed: {:?}", ret));
             }
-            
-            cuda_runtime_sys::cudaMemset(ptr, 0, size);
+
+            cudaMemset(ptr, 0, size);
+            Ok(Storage::CUDA { ptr, size, device })
         }
-        
-        Ok(Storage::CUDA { ptr, size, device })
     }
 
     #[cfg(target_os = "macos")]
@@ -91,14 +91,13 @@ impl Storage {
             MTLResourceOptions::StorageModeShared,
         );
         
-        let ptr = buffer.contents() as *mut std::ffi::c_void;
+        let ptr = buffer.contents() as *mut c_void;
         
         unsafe {
             std::ptr::write_bytes(ptr as *mut u8, 0, size);
         }
         
         std::mem::forget(buffer);
-        
         Ok(Storage::Metal { ptr, size, device })
     }
 
@@ -150,7 +149,7 @@ impl Drop for Storage {
             #[cfg(target_os = "linux")]
             Storage::CUDA { ptr, .. } => unsafe {
                 if !ptr.is_null() {
-                    cuda_runtime_sys::cudaFree(*ptr);
+                    cudaFree(*ptr);
                 }
             },
             #[cfg(target_os = "macos")]
@@ -282,5 +281,63 @@ impl std::fmt::Debug for Tensor {
             .field("dtype", &self.dtype)
             .field("device", &self.device())
             .finish()
+    }
+}
+
+// GPU-specific tensor for zero-copy operations
+#[cfg(target_os = "linux")]
+pub struct GpuTensor {
+    pub ptr: *mut f32,
+    pub shape: (usize, usize),
+    pub device: usize,
+}
+
+#[cfg(target_os = "linux")]
+impl GpuTensor {
+    pub fn zeros(m: usize, n: usize) -> Result<Self, String> {
+        unsafe {
+            let mut ptr: *mut f32 = ptr::null_mut();
+            let size = m * n * std::mem::size_of::<f32>();
+            if cudaMalloc(&mut ptr as *mut _ as *mut *mut c_void, size) != cudaError_t::cudaSuccess {
+                return Err("cudaMalloc failed".into());
+            }
+            cudaMemset(ptr as *mut c_void, 0, size);
+            Ok(GpuTensor { ptr, shape: (m, n), device: 0 })
+        }
+    }
+
+    pub fn from_host(data: &[f32], m: usize, n: usize) -> Result<Self, String> {
+        let mut tensor = Self::zeros(m, n)?;
+        unsafe {
+            let size = m * n * std::mem::size_of::<f32>();
+            cudaMemcpy(
+                tensor.ptr as *mut c_void,
+                data.as_ptr() as *const c_void,
+                size,
+                cudaMemcpyKind::cudaMemcpyHostToDevice
+            );
+        }
+        Ok(tensor)
+    }
+
+    pub fn to_host(&self) -> Vec<f32> {
+        let (m, n) = self.shape;
+        let mut result = vec![0.0f32; m * n];
+        unsafe {
+            cudaMemcpy(
+                result.as_mut_ptr() as *mut c_void,
+                self.ptr as *const c_void,
+                m * n * std::mem::size_of::<f32>(),
+                cudaMemcpyKind::cudaMemcpyDeviceToHost
+            );
+        }
+        result
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl Drop for GpuTensor {
+    fn drop(&mut self) {
+        unsafe { cudaFree(self.ptr as *mut c_void); }
     }
 }
