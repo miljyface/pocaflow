@@ -18,6 +18,7 @@ const CUBLASLT_MATMUL_DESC_TRANSA: u32 = 0;
 const CUBLASLT_MATMUL_DESC_TRANSB: u32 = 1;
 const CUBLAS_OP_N: u8 = 0;
 
+#[link(name = "cublasLt")]
 extern "C" {
     fn cublasLtMatmulDescSetAttribute(
         desc: cublasLtMatmulDesc_t,
@@ -48,7 +49,6 @@ pub struct MemoryPool {
     pool: VecDeque<(*mut f32, usize, usize)>,
     max_size: usize,
 }
-
 impl MemoryPool {
     fn new(max_size: usize) -> Self {
         MemoryPool { pool: VecDeque::new(), max_size }
@@ -139,21 +139,18 @@ impl CudaContext {
             if cublasLtMatmulDescCreate(&mut operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F) != 0 {
                 return Err("matmulDescCreate failed".into());
             }
-            // Explicitly set op(A) and op(B) to "no transpose"
             let op_none: u8 = 0;
             if cublasLtMatmulDescSetAttribute(
                 operationDesc,
                 CUBLASLT_MATMUL_DESC_TRANSA,
-                &op_none as *const _ as *const c_void,
-                1,
+                &op_none as *const _ as *const c_void, 1
             ) != 0 {
                 return Err("MatmulDescSetAttribute TRANSA failed".into());
             }
             if cublasLtMatmulDescSetAttribute(
                 operationDesc,
                 CUBLASLT_MATMUL_DESC_TRANSB,
-                &op_none as *const _ as *const c_void,
-                1,
+                &op_none as *const _ as *const c_void, 1
             ) != 0 {
                 return Err("MatmulDescSetAttribute TRANSB failed".into());
             }
@@ -163,9 +160,6 @@ impl CudaContext {
             cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, m as u64);
             cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
             cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
-            println!("A: {:p}, shape=({},{}), ld={}", d_a, m, k, m);
-            println!("B: {:p}, shape=({},{}), ld={}", d_b, k, n, k);
-            println!("C: {:p}, shape=({},{}), ld={}", d_c, m, n, m);
             let status = cublasLtMatmul(
                 self.handle, operationDesc,
                 &alpha as *const f32 as *const c_void,
