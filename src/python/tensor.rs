@@ -1,102 +1,89 @@
 use pyo3::prelude::*;
-use crate::core::{Tensor as CoreTensor, Shape, DType};
-use numpy::PyArray2;
+use numpy::{PyArray2, PyReadonlyArray2};
+use std::sync::Arc;
 
 #[pyclass]
+#[derive(Clone)]
 pub struct Tensor {
-    inner: CoreTensor,
+    pub ptr: *mut f32,
+    pub shape: (usize, usize),
+    pub device: String,
+    pub owns_memory: bool,
 }
+
+unsafe impl Send for Tensor {}
 
 #[pymethods]
 impl Tensor {
-    #[new]
-    fn new(shape: Vec<usize>, dtype: &str) -> PyResult<Self> {
-        let dtype = match dtype {
-            "f32" | "float32" => DType::F32,
-            "f64" | "float64" => DType::F64,
-            "i32" | "int32" => DType::I32,
-            "i64" | "int64" => DType::I64,
-            _ => return Err(pyo3::exceptions::PyValueError::new_err("Invalid dtype")),
-        };
-
-        let shape = Shape::new(shape);
-        let device = crate::core::tensor::Device::CPU;
+    #[staticmethod]
+    pub fn from_array(arr: PyReadonlyArray2<f32>, device: Option<&str>) -> PyResult<Self> {
+        let device = device.unwrap_or("cuda");
+        let arr = arr.as_array();
+        let (m, n) = arr.dim();
         
-        Ok(Self {
-            inner: CoreTensor::zeros(shape, dtype, device)
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
-        })
-    }
-
-    #[staticmethod]
-    fn zeros(shape: Vec<usize>, dtype: &str) -> PyResult<Self> {
-        Self::new(shape, dtype)
-    }
-
-    #[staticmethod]
-    fn from_array(_py: Python, arr: &PyAny) -> PyResult<Self> {
-        if let Ok(arr_f32) = arr.extract::<numpy::PyReadonlyArray2<f32>>() {
-            let shape = Shape::new(vec![arr_f32.shape()[0], arr_f32.shape()[1]]);
-            let data: Vec<f32> = arr_f32.as_array().iter().copied().collect();
-            
-            Ok(Self {
-                inner: CoreTensor::from_slice_f32(&data, shape),
-            })
-        } else {
-            Err(pyo3::exceptions::PyTypeError::new_err("Expected f32 array"))
-        }
-    }
-
-    fn shape(&self) -> Vec<usize> {
-        self.inner.shape().dims().to_vec()
-    }
-
-    fn dtype(&self) -> &str {
-        self.inner.dtype().name()
-    }
-
-    fn numel(&self) -> usize {
-        self.inner.numel()
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "Tensor(shape={:?}, dtype={}, device={:?})",
-            self.inner.shape().dims(),
-            self.inner.dtype(),
-            self.inner.device()
-        )
-    }
-
-    fn __len__(&self) -> usize {
-        self.inner.shape().dims()[0]
-    }
-
-    fn numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyAny> {
-        if let Some(data) = self.inner.as_slice_f32() {
-            let shape = self.inner.shape().dims();
-            if shape.len() == 2 {
-                let arr = ndarray::Array2::from_shape_vec(
-                    (shape[0], shape[1]),
-                    data.to_vec(),
-                ).map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
+        if device == "cuda" {
+            unsafe {
+                let mut ptr: *mut f32 = std::ptr::null_mut();
+                let size = m * n * std::mem::size_of::<f32>();
                 
-                Ok(PyArray2::from_owned_array(py, arr).into())
-            } else {
-                Err(pyo3::exceptions::PyNotImplementedError::new_err(
-                    "Only 2D tensors supported for now"
-                ))
+                cuda_runtime_sys::cudaMalloc(
+                    &mut ptr as *mut _ as *mut *mut std::ffi::c_void,
+                    size
+                );
+                
+                cuda_runtime_sys::cudaMemcpy(
+                    ptr as *mut std::ffi::c_void,
+                    arr.as_ptr() as *const std::ffi::c_void,
+                    size,
+                    cuda_runtime_sys::cudaMemcpyKind::cudaMemcpyHostToDevice
+                );
+                
+                Ok(Tensor {
+                    ptr,
+                    shape: (m, n),
+                    device: device.to_string(),
+                    owns_memory: true,
+                })
             }
         } else {
-            Err(pyo3::exceptions::PyRuntimeError::new_err(
-                "Cannot convert GPU tensor to numpy"
-            ))
+            Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Only 'cuda' device supported"))
         }
+    }
+    
+    pub fn numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f32>> {
+        let (m, n) = self.shape;
+        let mut result = vec![0.0f32; m * n];
+        
+        unsafe {
+            cuda_runtime_sys::cudaMemcpy(
+                result.as_mut_ptr() as *mut std::ffi::c_void,
+                self.ptr as *const std::ffi::c_void,
+                m * n * std::mem::size_of::<f32>(),
+                cuda_runtime_sys::cudaMemcpyKind::cudaMemcpyDeviceToHost
+            );
+        }
+        
+        let arr = ndarray::Array2::from_shape_vec((m, n), result)
+            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
+        
+        Ok(PyArray2::from_owned_array(py, arr))
+    }
+    
+    pub fn shape(&self) -> (usize, usize) {
+        self.shape
+    }
+    
+    pub fn device(&self) -> String {
+        self.device.clone()
     }
 }
 
-pub fn register(_py: Python, m: &PyModule) -> PyResult<()> {
-    m.add_class::<Tensor>()?;
-    Ok(())
+impl Drop for Tensor {
+    fn drop(&mut self) {
+        if self.owns_memory && !self.ptr.is_null() {
+            unsafe {
+                cuda_runtime_sys::cudaFree(self.ptr as *mut std::ffi::c_void);
+            }
+        }
+    }
 }
-

@@ -4,7 +4,6 @@ use std::ffi::c_void;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-// cuBLAS-LT FFI bindings
 #[link(name = "cublasLt")]
 extern "C" {
     fn cublasLtCreate(handle: *mut *mut c_void) -> i32;
@@ -32,23 +31,28 @@ const CUDA_R_32F: i32 = 0;
 
 type CudaStream = *mut CUstream_st;
 
-pub struct CudaGraphCache {
-    graphs: HashMap<(usize, usize, usize), (*mut c_void, *mut c_void)>,
+pub struct BufferCache {
+    buffers: HashMap<(usize, usize), *mut f32>,
 }
 
-impl CudaGraphCache {
+impl BufferCache {
     pub fn new() -> Self {
-        CudaGraphCache {
-            graphs: HashMap::new(),
+        BufferCache {
+            buffers: HashMap::new(),
         }
     }
-
-    pub fn get_or_create(
-        &mut self,
-        m: usize, n: usize, k: usize,
-        create_fn: impl FnOnce() -> (*mut c_void, *mut c_void)
-    ) -> (*mut c_void, *mut c_void) {
-        *self.graphs.entry((m, n, k)).or_insert_with(create_fn)
+    
+    pub fn get_or_alloc(&mut self, m: usize, n: usize) -> *mut f32 {
+        *self.buffers.entry((m, n)).or_insert_with(|| {
+            let mut ptr: *mut f32 = std::ptr::null_mut();
+            unsafe {
+                cudaMalloc(
+                    &mut ptr as *mut _ as *mut *mut c_void,
+                    m * n * std::mem::size_of::<f32>()
+                );
+            }
+            ptr
+        })
     }
 }
 
@@ -57,7 +61,7 @@ pub struct CudaContext {
     pub streams: Vec<CudaStream>,
     pub workspace: *mut c_void,
     pub workspace_size: usize,
-    pub graph_cache: Mutex<CudaGraphCache>,
+    pub buffer_cache: Mutex<BufferCache>,
 }
 
 unsafe impl Send for CudaContext {}
@@ -90,7 +94,7 @@ impl CudaContext {
                 streams,
                 workspace,
                 workspace_size,
-                graph_cache: Mutex::new(CudaGraphCache::new()),
+                buffer_cache: Mutex::new(BufferCache::new()),
             })
         }
     }

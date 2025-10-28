@@ -1,16 +1,18 @@
-use pyo3::prelude::*;
-
+mod python;
 mod core;
 mod backends;
-mod cpu;
 mod ops;
-mod python;
-mod utils;
+mod cpu;
+
+use pyo3::prelude::*;
 
 #[pymodule]
-fn pocaflow(_py: Python, m: &PyModule) -> PyResult<()> {
-    // Register operations
-    ops::register(m)?;
-    m.add_class::<python::tensor::Tensor>()?;
+fn pocaflow(py: Python, m: &PyModule) -> PyResult<()> {
+    python::register(m)?;  // Register Tensor class
+    ops::matmul::register(m)?;
+    
+    #[cfg(target_os = "linux")]
+    m.add_function(wrap_pyfunction!(backends::cuda::matmul::matmul, m)?)?;
+    
     Ok(())
 }
