@@ -5,9 +5,9 @@ use std::sync::Arc;
 pub enum Device {
     CPU,
     #[cfg(target_os = "linux")]
-    CUDA(usize), // device id
+    CUDA(usize),
     #[cfg(target_os = "macos")]
-    Metal(usize), // device id
+    Metal(usize),
 }
 
 impl Device {
@@ -26,7 +26,6 @@ impl Device {
     }
 }
 
-/// Storage backend for tensor data
 pub enum Storage {
     CPU {
         data: Vec<u8>,
@@ -58,24 +57,22 @@ impl Storage {
     #[cfg(target_os = "linux")]
     pub fn new_cuda(size: usize, device: usize) -> Result<Self, String> {
         use std::ffi::c_void;
+        use cuda_runtime_sys::cudaError;
         
-        // Set CUDA device
         unsafe {
             let ret = cuda_runtime_sys::cudaSetDevice(device as i32);
-            if ret != 0 {
-                return Err(format!("cudaSetDevice failed: {}", ret));
+            if ret != cudaError::cudaSuccess {
+                return Err(format!("cudaSetDevice failed: {:?}", ret));
             }
         }
         
-        // Allocate GPU memory
         let mut ptr: *mut c_void = std::ptr::null_mut();
         unsafe {
             let ret = cuda_runtime_sys::cudaMalloc(&mut ptr as *mut *mut c_void, size);
-            if ret != 0 || ptr.is_null() {
-                return Err(format!("cudaMalloc failed: {}", ret));
+            if ret != cudaError::cudaSuccess || ptr.is_null() {
+                return Err(format!("cudaMalloc failed: {:?}", ret));
             }
             
-            // Zero initialize
             cuda_runtime_sys::cudaMemset(ptr, 0, size);
         }
         
@@ -96,13 +93,10 @@ impl Storage {
         
         let ptr = buffer.contents() as *mut std::ffi::c_void;
         
-        // Zero initialize
         unsafe {
             std::ptr::write_bytes(ptr as *mut u8, 0, size);
         }
         
-        // We need to keep the buffer alive, so we leak it here
-        // In production, you'd wrap this in a proper RAII struct
         std::mem::forget(buffer);
         
         Ok(Storage::Metal { ptr, size, device })
@@ -152,9 +146,7 @@ impl Storage {
 impl Drop for Storage {
     fn drop(&mut self) {
         match self {
-            Storage::CPU { .. } => {
-                // Vec handles deallocation automatically
-            }
+            Storage::CPU { .. } => {}
             #[cfg(target_os = "linux")]
             Storage::CUDA { ptr, .. } => unsafe {
                 if !ptr.is_null() {
@@ -162,15 +154,11 @@ impl Drop for Storage {
                 }
             },
             #[cfg(target_os = "macos")]
-            Storage::Metal { .. } => {
-                // Metal buffer was leaked in new_metal, would need proper cleanup
-                // In production, wrap in Arc<MetalBuffer> or similar
-            }
+            Storage::Metal { .. } => {}
         }
     }
 }
 
-/// High-performance tensor with GPU support
 pub struct Tensor {
     storage: Arc<Storage>,
     shape: Shape,
