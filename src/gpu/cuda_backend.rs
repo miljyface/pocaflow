@@ -10,8 +10,8 @@ use cublas_sys::{
 };
 use ndarray::Array2;
 use std::ptr;
+use std::ffi::c_void;
 
-// Error helpers
 fn cuda_error_to_i32(status: cudaError_t) -> Result<(), i32> {
     if status != cudaError_t::cudaSuccess {
         Err(status as i32)
@@ -47,7 +47,6 @@ impl CudaContext {
 
             let mut stream: *mut CUstream_st = ptr::null_mut();
             cuda_error_to_i32(cudaStreamCreate(&mut stream))?;
-
             cublas_error_to_i32(cublasSetStream_v2(
                 handle,
                 stream as *mut Struct_CUstream_st,
@@ -111,10 +110,8 @@ impl CudaContext {
         let b_bytes = b_elems * std::mem::size_of::<f32>();
         let c_bytes = c_elems * std::mem::size_of::<f32>();
 
-        // Ensure persistent GPU buffer is large enough
         self.ensure_capacity(a_elems, b_elems, c_elems)?;
 
-        // Allocate pinned host memory for inputs and output
         let mut pinned_a: *mut f32 = ptr::null_mut();
         let mut pinned_b: *mut f32 = ptr::null_mut();
         let mut pinned_c: *mut f32 = ptr::null_mut();
@@ -125,8 +122,8 @@ impl CudaContext {
             std::ptr::copy_nonoverlapping(a.as_ptr(), pinned_a, a_elems);
             std::ptr::copy_nonoverlapping(b.as_ptr(), pinned_b, b_elems);
 
-            cuda_error_to_i32(cudaMemcpyAsync(self.buffer_a, pinned_a, a_bytes, cudaMemcpyKind::cudaMemcpyHostToDevice, self.stream))?;
-            cuda_error_to_i32(cudaMemcpyAsync(self.buffer_b, pinned_b, b_bytes, cudaMemcpyKind::cudaMemcpyHostToDevice, self.stream))?;
+            cuda_error_to_i32(cudaMemcpyAsync(self.buffer_a as *mut c_void, pinned_a as *const c_void, a_bytes, cudaMemcpyKind::cudaMemcpyHostToDevice, self.stream))?;
+            cuda_error_to_i32(cudaMemcpyAsync(self.buffer_b as *mut c_void, pinned_b as *const c_void, b_bytes, cudaMemcpyKind::cudaMemcpyHostToDevice, self.stream))?;
 
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
@@ -144,7 +141,7 @@ impl CudaContext {
                 )
             )?;
 
-            cuda_error_to_i32(cudaMemcpyAsync(pinned_c, self.buffer_c, c_bytes, cudaMemcpyKind::cudaMemcpyDeviceToHost, self.stream))?;
+            cuda_error_to_i32(cudaMemcpyAsync(pinned_c as *mut c_void, self.buffer_c as *const c_void, c_bytes, cudaMemcpyKind::cudaMemcpyDeviceToHost, self.stream))?;
             cuda_error_to_i32(cudaStreamSynchronize(self.stream))?;
 
             let result = std::slice::from_raw_parts(pinned_c, c_elems);
