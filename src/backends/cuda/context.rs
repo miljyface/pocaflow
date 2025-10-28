@@ -1,8 +1,6 @@
 use cuda_runtime_sys::*;
 use std::ptr;
 use std::ffi::c_void;
-use std::collections::HashMap;
-use std::sync::Mutex;
 
 #[repr(C)]
 pub struct cublasLtHandle_st { _unused: [u8; 0] }
@@ -29,36 +27,19 @@ extern "C" {
     ) -> i32;
     fn cublasLtMatmulDescCreate(desc: *mut cublasLtMatmulDesc_t, computeType: i32, scaleType: i32) -> i32;
     fn cublasLtMatrixLayoutCreate(layout: *mut cublasLtMatrixLayout_t, type_: i32, rows: u64, cols: u64, ld: u64) -> i32;
+    fn cublasLtMatmulDescDestroy(desc: cublasLtMatmulDesc_t) -> i32;
+    fn cublasLtMatrixLayoutDestroy(layout: cublasLtMatrixLayout_t) -> i32;
 }
 
 const CUBLAS_COMPUTE_32F: i32 = 68;
 const CUDA_R_32F: i32 = 0;
 type CudaStream = *mut CUstream_st;
 
-pub struct BufferCache {
-    buffers: HashMap<(usize, usize), *mut f32>,
-}
-
-impl BufferCache {
-    pub fn new() -> Self {
-        BufferCache { buffers: HashMap::new() }
-    }
-    
-    pub fn get_or_alloc(&mut self, m: usize, n: usize) -> *mut f32 {
-        *self.buffers.entry((m, n)).or_insert_with(|| unsafe {
-            let mut ptr: *mut f32 = ptr::null_mut();
-            cudaMalloc(&mut ptr as *mut _ as *mut *mut c_void, m * n * 4);
-            ptr
-        })
-    }
-}
-
 pub struct CudaContext {
     pub handle: cublasLtHandle_t,
     pub streams: Vec<CudaStream>,
     pub workspace: *mut c_void,
     pub workspace_size: usize,
-    pub buffer_cache: Mutex<BufferCache>,
 }
 
 unsafe impl Send for CudaContext {}
@@ -86,7 +67,7 @@ impl CudaContext {
                 return Err("workspace malloc failed".into());
             }
 
-            Ok(CudaContext { handle, streams, workspace, workspace_size, buffer_cache: Mutex::new(BufferCache::new()) })
+            Ok(CudaContext { handle, streams, workspace, workspace_size })
         }
     }
 
@@ -98,6 +79,7 @@ impl CudaContext {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
+            // Create fresh descriptors for EACH call
             let mut operationDesc = ptr::null_mut();
             if cublasLtMatmulDescCreate(&mut operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F) != 0 {
                 return Err("matmulDescCreate failed".into());
@@ -107,7 +89,7 @@ impl CudaContext {
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            // Row-major C layout: A[m,k] ld=k, B[k,n] ld=n, C[m,n] ld=n
+            // Row-major: swap and use correct ld
             cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, k as u64);
             cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, n as u64, k as u64, n as u64);
             cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, n as u64, m as u64, n as u64);
@@ -115,7 +97,7 @@ impl CudaContext {
             let status = cublasLtMatmul(
                 self.handle, operationDesc,
                 &alpha as *const f32 as *const c_void,
-                d_b as *const c_void, Bdesc,  // Swap A and B for row-major
+                d_b as *const c_void, Bdesc,
                 d_a as *const c_void, Adesc,
                 &beta as *const f32 as *const c_void,
                 d_c as *const c_void, Cdesc,
@@ -124,6 +106,12 @@ impl CudaContext {
             );
 
             cudaStreamSynchronize(stream);
+
+            // Clean up descriptors IMMEDIATELY
+            cublasLtMatmulDescDestroy(operationDesc);
+            cublasLtMatrixLayoutDestroy(Adesc);
+            cublasLtMatrixLayoutDestroy(Bdesc);
+            cublasLtMatrixLayoutDestroy(Cdesc);
 
             if status != 0 {
                 Err(format!("cublasLtMatmul failed: {}", status))
