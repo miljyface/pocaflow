@@ -1,5 +1,4 @@
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
 use numpy::{PyArray2, PyReadonlyArray2};
 use crate::gpu::CudaContext;
 use std::cell::RefCell;
