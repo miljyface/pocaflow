@@ -81,19 +81,20 @@ impl Tensor {
     pub fn numpy<'py>(&self, py: Python<'py>) -> PyResult<&'py PyArray2<f32>> {
         let (m, n) = self.shape;
         let mut result = vec![0.0f32; m * n];
-
+        
         unsafe {
             cudaMemcpy(
                 result.as_mut_ptr() as *mut c_void,
                 self.ptr as *const c_void,
                 m * n * std::mem::size_of::<f32>(),
-                cudaMemcpyKind::cudaMemcpyDeviceToHost,
+                cudaMemcpyKind::cudaMemcpyDeviceToHost
             );
         }
-
-        let arr = ndarray::Array2::from_shape_vec((m, n), result)
+        
+        // CRITICAL: Fortran order!
+        let arr = ndarray::Array2::from_shape_vec((m, n).f(), result)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("{}", e)))?;
-
+        
         Ok(PyArray2::from_owned_array(py, arr))
     }
 
