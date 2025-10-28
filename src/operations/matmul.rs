@@ -14,15 +14,13 @@ pub fn matmul<'py>(
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
-    // Convert PyReadonlyArray2 to &PyAny
-    let a_any = a.as_ref().as_any();
-    let b_any = b.as_ref().as_any();
-    
-    // Call cuda_matmul which returns PyObject
+    // Convert PyReadonlyArray2 to &PyAny for FFI compatibility
+    let a_any: &pyo3::PyAny = a.as_pyany();
+    let b_any: &pyo3::PyAny = b.as_pyany();
+
+    // gpu_matmul_f32 returns a PyObject
     let result = gpu_matmul_f32(py, a_any, b_any)?;
-    
-    // Extract as PyArray2
-    Ok(result.extract::<&PyArray2<f32>>()?)
+    result.extract::<&PyArray2<f32>>(py)
 }
 
 #[pyfunction]

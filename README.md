@@ -55,6 +55,7 @@ let c = matmul(a.view(), b.view());
 
 - [x] Matrix multiplication (CPU, Metal, CUDA)
 - [x] Vector operations
+- [x] Optimised GPU-native shit
 - [ ] Broadcasting support
 - [ ] Sparse matrices
 - [ ] Autodifferentiation
