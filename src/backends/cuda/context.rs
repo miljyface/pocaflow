@@ -136,9 +136,8 @@ impl CudaContext {
     }
 
     pub fn matmul_f32_gpu(&mut self, d_a: *const f32, d_b: *const f32, d_c: *mut f32,
-                          m: usize, n: usize, k: usize, stream_idx: usize) -> Result<(), String> {
+                      m: usize, n: usize, k: usize, stream_idx: usize) -> Result<(), String> {
         let stream = self.streams[stream_idx % self.streams.len()];
-        
         unsafe {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
@@ -152,15 +151,21 @@ impl CudaContext {
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, k as u64, m as u64, k as u64);
-            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, n as u64, k as u64, n as u64);
-            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, n as u64, m as u64, n as u64);
+            // CORRECT for Fortran-order/column-major buffers!
+            cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, m as u64);
+            cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
+            cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
+
+            // Print debug info for full-trace
+            println!("A: {:p}, shape=({},{}), ld={}", d_a, m, k, m);
+            println!("B: {:p}, shape=({},{}), ld={}", d_b, k, n, k);
+            println!("C: {:p}, shape=({},{}), ld={}", d_c, m, n, m);
 
             let status = cublasLtMatmul(
                 self.handle, operationDesc,
                 &alpha as *const f32 as *const c_void,
-                d_b as *const c_void, Bdesc,
                 d_a as *const c_void, Adesc,
+                d_b as *const c_void, Bdesc,
                 &beta as *const f32 as *const c_void,
                 d_c as *const c_void, Cdesc,
                 d_c as *mut c_void, Cdesc,
