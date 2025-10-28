@@ -19,7 +19,7 @@ fn build_cuda() {
     let arch = detect_gpu_arch();
     
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
-    let kernel_path = format!("{}/kernels/cuda/matmul_kernel.cu", manifest_dir);
+    let kernel_path = format!("{}/src/kernels/cuda/matmul_kernel.cu", manifest_dir);
 
     assert!(std::path::Path::new(&kernel_path).exists(), "Kernel file not found: {:?}", kernel_path);
 
