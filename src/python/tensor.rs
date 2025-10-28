@@ -4,6 +4,7 @@ use numpy::{PyArray2, Element};
 use std::sync::Arc;
 use std::ptr;
 use std::ffi::c_void;
+use ndarray::ShapeBuilder;
 
 #[cfg(target_os = "linux")]
 use cuda_runtime_sys::{cudaMalloc, cudaFree, cudaMemcpy, cudaMemcpyKind, cudaError_t};
