@@ -53,14 +53,23 @@ let c = matmul(a.view(), b.view());
 
 ## Roadmap
 
-- [x] Matrix multiplication (CPU, Metal, CUDA)
-- [x] Vector operations
-- [x] Optimised GPU-native shit
-- [ ] Broadcasting support
-- [ ] Sparse matrices
-- [ ] Autodifferentiation
-- [ ] Neural network primitives
-- [ ] Distributed computing support
+- [ ] 0. Rework Architecture s.t. source can build on mac and linux with os recognition
+- [ ] 1. Implement GPU-native matrix/tensor struct in Rust
+- [ ] 2. Implement PyO3 bindings for DeviceMatrix
+- [ ] 3. Rewrite matmul to operate only on device-resident buffers
+- [ ] 4. Remove all automatic synchronization
+- [ ] 6. Use pinned (page-locked) memory for all host buffers
+- [ ] 5. Reuse allocated cuBLAS workspace
+- [ ] 7. Batch/stream for high throughput
+- [ ] 8. Profile with NSight/Visual Profiler
+- [ ] 8.5.High-level python package wrappers and nn stuff
+- [ ] 9. Add multi-GPU logic
+- [ ] 10.Broadcasting support
+- [ ] 11.Sparse matrices
+- [ ] 12.Autodifferentiation
+- [ ] 13.Neural network primitives
+- [ ] 14.Distributed computing support
+
 
 ## Contributing & Feedback
 
