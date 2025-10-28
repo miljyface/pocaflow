@@ -20,7 +20,7 @@ pub fn matmul<'py>(
     return cuda::matmul::cuda_matmul_f32(py, a, b);
     
     #[cfg(target_os = "macos")]
-    return metal::matmul::matmul_f32(py, a, b);
+    return metal::matmul::metal_matmul_f32(py, a, b);
     
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
     return matmul_f32_cpu(py, a, b);

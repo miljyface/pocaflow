@@ -6,7 +6,7 @@ use crate::python::tensor::Tensor;
 static CUDA_CTX: OnceLock<Mutex<CudaContext>> = OnceLock::new();
 
 #[pyfunction]
-pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
+pub fn cuda_matmul_f32(a: Tensor, b: Tensor) -> PyResult<Tensor> {
     if a.device != "cuda" || b.device != "cuda" {
         return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>("Both tensors must be on CUDA"));
     }

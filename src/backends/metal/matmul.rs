@@ -1,52 +1,45 @@
+// wtf
 use pyo3::prelude::*;
-use pyo3::wrap_pyfunction;
-use numpy::{PyArray2, PyReadonlyArray2};
+use super::context::MetalContext;
+use std::sync::{OnceLock, Mutex};
+use crate::python::tensor::Tensor;
 
-#[cfg(target_os = "linux")]
-use crate::backends::cuda;
-
-#[cfg(target_os = "macos")]
-use crate::backends::metal;
-
-use crate::cpu::blas::{sgemm, dgemm};
+static METAL_CTX: OnceLock<Mutex<MetalContext>> = OnceLock::new();
 
 #[pyfunction]
-pub fn matmul<'py>(
-    py: Python<'py>,
-    a: PyReadonlyArray2<'py, f32>,
-    b: PyReadonlyArray2<'py, f32>,
-) -> PyResult<&'py PyArray2<f32>> {
-    #[cfg(target_os = "linux")]
-    return cuda::matmul::cuda_matmul_f32(py, a, b);
+pub fn metal_matmul_f32(a: Tensor, b: Tensor) -> PyResult<Tensor> {
+    if a.device != "metal" || b.device != "metal" {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "Both tensors must be on Metal device"
+        ));
+    }
+    
+    let (m, k) = a.shape;
+    let (k2, n) = b.shape;
+    
+    if k != k2 {
+        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+            "Matrix dimension mismatch"
+        ));
+    }
 
-    #[cfg(target_os = "macos")]
-    return metal::matmul::matmul_f32(py, a, b);
+    let ctx = METAL_CTX.get_or_init(|| {
+        Mutex::new(MetalContext::new().expect("Failed to initialize Metal context"))
+    });
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-    return matmul_f32_cpu(py, a, b);
-}
-
-#[pyfunction]
-pub fn matmul_f32_cpu<'py>(
-    py: Python<'py>,
-    a: PyReadonlyArray2<'py, f32>,
-    b: PyReadonlyArray2<'py, f32>,
-) -> PyResult<&'py PyArray2<f32>> {
-    Ok(PyArray2::from_owned_array(py, sgemm(a.as_array(), b.as_array())))
-}
-
-#[pyfunction]
-pub fn matmul_f64<'py>(
-    py: Python<'py>,
-    a: PyReadonlyArray2<'py, f64>,
-    b: PyReadonlyArray2<'py, f64>,
-) -> PyResult<&'py PyArray2<f64>> {
-    Ok(PyArray2::from_owned_array(py, dgemm(a.as_array(), b.as_array())))
-}
-
-pub fn register(m: &PyModule) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(matmul, m)?)?;
-    m.add_function(wrap_pyfunction!(matmul_f32_cpu, m)?)?;
-    m.add_function(wrap_pyfunction!(matmul_f64, m)?)?;
-    Ok(())
+    let mut ctx_guard = ctx.lock().unwrap();
+    
+    // Get cached output buffer
+    let d_c = ctx_guard.buffer_cache.lock().unwrap().get_or_alloc(m, n);
+    
+    // Compute on Metal GPU (zero copies!)
+    ctx_guard.matmul_f32_gpu(a.ptr, b.ptr, d_c, m, n, k, 0)
+        .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e))?;
+    
+    Ok(Tensor {
+        ptr: d_c,
+        shape: (m, n),
+        device: "metal".to_string(),
+        owns_memory: false, // Managed by buffer cache
+    })
 }
