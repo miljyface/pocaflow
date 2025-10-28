@@ -1,24 +1,31 @@
 use pyo3::prelude::*;
-use numpy::{PyReadonlyArray2, PyArray2};
-use crate::blas::{dgemm, sgemm};
-
-#[cfg(target_os = "macos")]
-use crate::operations::experimental::metal_matmul::metal_matmul_f32 as gpu_matmul_f32;
+use pyo3::wrap_pyfunction;
+use numpy::{PyArray2, PyReadonlyArray2};
 
 #[cfg(target_os = "linux")]
-use crate::operations::experimental::cuda_matmul::cuda_matmul_f32 as gpu_matmul_f32;
+use crate::backends::cuda;
 
-// GPU matmul entry (returns a PyArray2<f32> directly)
+#[cfg(target_os = "macos")]
+use crate::backends::metal;
+
+use crate::cpu::blas::{sgemm, dgemm};
+
 #[pyfunction]
 pub fn matmul<'py>(
     py: Python<'py>,
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
-    gpu_matmul_f32(py, a, b)
+    #[cfg(target_os = "linux")]
+    return cuda::matmul::matmul_f32(py, a, b);
+    
+    #[cfg(target_os = "macos")]
+    return metal::matmul::matmul_f32(py, a, b);
+    
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    return matmul_f32_cpu(py, a, b);
 }
 
-// CPU fallback, returns a reference to PyArray2<f32>
 #[pyfunction]
 pub fn matmul_f32_cpu<'py>(
     py: Python<'py>,
@@ -28,7 +35,6 @@ pub fn matmul_f32_cpu<'py>(
     Ok(PyArray2::from_owned_array(py, sgemm(a.as_array(), b.as_array())))
 }
 
-// CPU double precision fallback
 #[pyfunction]
 pub fn matmul_f64<'py>(
     py: Python<'py>,
@@ -36,4 +42,11 @@ pub fn matmul_f64<'py>(
     b: PyReadonlyArray2<'py, f64>,
 ) -> PyResult<&'py PyArray2<f64>> {
     Ok(PyArray2::from_owned_array(py, dgemm(a.as_array(), b.as_array())))
+}
+
+pub fn register(m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(matmul, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul_f32_cpu, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul_f64, m)?)?;
+    Ok(())
 }
