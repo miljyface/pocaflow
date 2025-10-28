@@ -3,9 +3,8 @@ use super::context::CudaContext;
 use std::sync::{OnceLock, Arc};
 use std::sync::Mutex as StdMutex;
 use crate::python::tensor::Tensor;
-use std::ptr;
 
-static CUDA_CTX: OnceLock<Arc<StdMutex<CudaContext>>> = OnceLock::new();
+pub static CUDA_CTX: OnceLock<Arc<StdMutex<CudaContext>>> = OnceLock::new();
 
 #[pyfunction]
 pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
@@ -24,7 +23,6 @@ pub fn matmul(a: Tensor, b: Tensor) -> PyResult<Tensor> {
         Arc::new(StdMutex::new(CudaContext::new(4, 256 * 1024 * 1024).expect("CUDA init failed")))
     });
 
-    // Get buffer from pool
     let d_c = ctx.lock().unwrap().alloc(m, n);
     
     ctx.lock().unwrap().matmul_f32_gpu(a.ptr, b.ptr, d_c, m, n, k, 0)

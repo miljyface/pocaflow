@@ -89,18 +89,24 @@ impl Tensor {
 impl Drop for Tensor {
     fn drop(&mut self) {
         if self.owns_memory && !self.ptr.is_null() && self.device == "cuda" {
-            // Return to pool instead of freeing
-            use crate::backends::cuda::context::CUDA_CTX;
-            if let Some(ctx) = CUDA_CTX.get() {
-                let (m, n) = self.shape;
-                ctx.lock().unwrap().free(self.ptr, m, n);
-            } else {
-                unsafe {
-                    use cuda_runtime_sys::{cudaFree, c_void};
-                    cudaFree(self.ptr as *mut c_void);
+            #[cfg(target_os = "linux")]
+            {
+                use crate::backends::cuda::matmul::CUDA_CTX;
+                if let Some(ctx) = CUDA_CTX.get() {
+                    let (m, n) = self.shape;
+                    ctx.lock().unwrap().free(self.ptr, m, n);
+                    return;
                 }
+            }
+            
+            // Fallback: direct free
+            unsafe {
+                use std::ffi::c_void;
+                use cuda_runtime_sys::cudaFree;
+                cudaFree(self.ptr as *mut c_void);
             }
         }
     }
 }
+
 
