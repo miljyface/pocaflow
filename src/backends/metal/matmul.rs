@@ -1,34 +1,52 @@
 use pyo3::prelude::*;
+use pyo3::wrap_pyfunction;
 use numpy::{PyArray2, PyReadonlyArray2};
-use super::context::MetalContext;
-use std::sync::OnceLock;
-use std::sync::Mutex;
 
-static METAL_CTX: OnceLock<Mutex<MetalContext>> = OnceLock::new();
+#[cfg(target_os = "linux")]
+use crate::backends::cuda;
+
+#[cfg(target_os = "macos")]
+use crate::backends::metal;
+
+use crate::cpu::blas::{sgemm, dgemm};
 
 #[pyfunction]
-pub fn matmul_f32<'py>(
+pub fn matmul<'py>(
     py: Python<'py>,
     a: PyReadonlyArray2<'py, f32>,
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
-    let a_owned = a.as_array().to_owned();
-    let b_owned = b.as_array().to_owned();
+    #[cfg(target_os = "linux")]
+    return cuda::matmul::cuda_matmul_f32(py, a, b);
 
-    let ctx = METAL_CTX.get_or_init(|| {
-        Mutex::new(MetalContext::new().expect("Failed to initialize Metal context"))
-    });
+    #[cfg(target_os = "macos")]
+    return metal::matmul::matmul_f32(py, a, b);
 
-    let result = {
-        let ctx_guard = ctx.lock().map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Failed to lock Metal context: {}", e))
-        })?;
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    return matmul_f32_cpu(py, a, b);
+}
 
-        ctx_guard.matmul_f32(&a_owned, &b_owned)
-            .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
-                format!("Metal matmul failed: {}", e)))?
-    };
+#[pyfunction]
+pub fn matmul_f32_cpu<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'py, f32>,
+    b: PyReadonlyArray2<'py, f32>,
+) -> PyResult<&'py PyArray2<f32>> {
+    Ok(PyArray2::from_owned_array(py, sgemm(a.as_array(), b.as_array())))
+}
 
-    Ok(PyArray2::from_owned_array(py, result))
+#[pyfunction]
+pub fn matmul_f64<'py>(
+    py: Python<'py>,
+    a: PyReadonlyArray2<'py, f64>,
+    b: PyReadonlyArray2<'py, f64>,
+) -> PyResult<&'py PyArray2<f64>> {
+    Ok(PyArray2::from_owned_array(py, dgemm(a.as_array(), b.as_array())))
+}
+
+pub fn register(m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(matmul, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul_f32_cpu, m)?)?;
+    m.add_function(wrap_pyfunction!(matmul_f64, m)?)?;
+    Ok(())
 }
