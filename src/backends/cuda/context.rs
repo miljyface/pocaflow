@@ -146,17 +146,16 @@ impl CudaContext {
             if cublasLtMatmulDescCreate(&mut operationDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F) != 0 {
                 return Err("matmulDescCreate failed".into());
             }
-
             let mut Adesc = ptr::null_mut();
             let mut Bdesc = ptr::null_mut();
             let mut Cdesc = ptr::null_mut();
 
-            // CORRECT for Fortran-order/column-major buffers!
+            // FIX: These must match Fortran-order!
             cublasLtMatrixLayoutCreate(&mut Adesc, CUDA_R_32F, m as u64, k as u64, m as u64);
             cublasLtMatrixLayoutCreate(&mut Bdesc, CUDA_R_32F, k as u64, n as u64, k as u64);
             cublasLtMatrixLayoutCreate(&mut Cdesc, CUDA_R_32F, m as u64, n as u64, m as u64);
 
-            // Print debug info for full-trace
+            // Debug print for trace
             println!("A: {:p}, shape=({},{}), ld={}", d_a, m, k, m);
             println!("B: {:p}, shape=({},{}), ld={}", d_b, k, n, k);
             println!("C: {:p}, shape=({},{}), ld={}", d_c, m, n, m);
@@ -173,7 +172,6 @@ impl CudaContext {
             );
 
             cudaStreamSynchronize(stream);
-
             cublasLtMatmulDescDestroy(operationDesc);
             cublasLtMatrixLayoutDestroy(Adesc);
             cublasLtMatrixLayoutDestroy(Bdesc);
