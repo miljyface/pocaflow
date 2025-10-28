@@ -25,12 +25,10 @@ impl MetalContext {
     pub fn matmul_f32(&self, a: &Array2<f32>, b: &Array2<f32>) -> Result<Array2<f32>, String> {
         let (m, k) = a.dim();
         let (k2, n) = b.dim();
-        
         if k != k2 {
             return Err("Dimension mismatch".to_string());
         }
 
-        // Dynamically choose tile size (power-of-2 and ≤ min(m,n,k, 64))
         let min_dim = m.min(n).min(k);
         let tile_size = if min_dim >= 64 { 64 }
             else if min_dim >= 32 { 32 }
@@ -38,53 +36,60 @@ impl MetalContext {
             else { 8 };
         let cache_key = format!("matmul_tiled_{}", tile_size);
 
-        // get or compile shader for this tile size
         let pipeline = {
             let mut cache = self.shader_cache.lock().unwrap();
             if let Some(cached) = cache.get(&cache_key) {
                 cached.clone()
             } else {
                 let shader = format!(r#"
-                    #include <metal_stdlib>
-                    using namespace metal;
-                    kernel void matmul_tiled(
-                        device const float* A [[buffer(0)]],
-                        device const float* B [[buffer(1)]],
-                        device float* C [[buffer(2)]],
-                        constant uint& M [[buffer(3)]],
-                        constant uint& N [[buffer(4)]],
-                        constant uint& K [[buffer(5)]],
-                        uint3 gid [[threadgroup_position_in_grid]],
-                        uint3 tid [[thread_position_in_threadgroup]]
-                    ) {{
-                        threadgroup float a_tile[{0}][{0}];
-                        threadgroup float b_tile[{0}][{0}];
-                        // Always zero-init all tiles
-                        a_tile[tid.y][tid.x] = 0.0f;
-                        b_tile[tid.y][tid.x] = 0.0f;
-                        uint row = gid.y * {0} + tid.y;
-                        uint col = gid.x * {0} + tid.x;
-                        float sum = 0.0f;
-                        for (uint t = 0; t < K; t += {0}) {{
-                            if (row < M && t + tid.x < K)
-                                a_tile[tid.y][tid.x] = A[row * K + t + tid.x];
-                            else
-                                a_tile[tid.y][tid.x] = 0.0f;
-                            if (t + tid.y < K && col < N)
-                                b_tile[tid.y][tid.x] = B[(t + tid.y) * N + col];
-                            else
-                                b_tile[tid.y][tid.x] = 0.0f;
-                            threadgroup_barrier(mem_flags::mem_threadgroup);
-                            for (uint k = 0; k < {0}; ++k) {{
-                                if (t + k < K)
-                                    sum += a_tile[tid.y][k] * b_tile[k][tid.x];
-                            }}
-                            threadgroup_barrier(mem_flags::mem_threadgroup);
-                        }}
-                        if (row < M && col < N)
-                            C[row * N + col] = sum;
-                    }}
-                "#, tile_size);
+#include <metal_stdlib>
+using namespace metal;
+
+kernel void matmul_tiled(
+    device const float* A [[buffer(0)]],
+    device const float* B [[buffer(1)]],
+    device float* C [[buffer(2)]],
+    constant uint& M [[buffer(3)]],
+    constant uint& N [[buffer(4)]],
+    constant uint& K [[buffer(5)]],
+    uint3 gid [[threadgroup_position_in_grid]],
+    uint3 tid [[thread_position_in_threadgroup]]
+) {{
+    threadgroup float a_tile[{0}][{0}];
+    threadgroup float b_tile[{0}][{0}];
+    
+    a_tile[tid.y][tid.x] = 0.0f;
+    b_tile[tid.y][tid.x] = 0.0f;
+    
+    uint row = gid.y * {0} + tid.y;
+    uint col = gid.x * {0} + tid.x;
+    float sum = 0.0f;
+    
+    for (uint t = 0; t < K; t += {0}) {{
+        if (row < M && t + tid.x < K)
+            a_tile[tid.y][tid.x] = A[row * K + t + tid.x];
+        else
+            a_tile[tid.y][tid.x] = 0.0f;
+        
+        if (t + tid.y < K && col < N)
+            b_tile[tid.y][tid.x] = B[(t + tid.y) * N + col];
+        else
+            b_tile[tid.y][tid.x] = 0.0f;
+        
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        
+        for (uint k = 0; k < {0}; ++k) {{
+            if (t + k < K)
+                sum += a_tile[tid.y][k] * b_tile[k][tid.x];
+        }}
+        
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }}
+    
+    if (row < M && col < N)
+        C[row * N + col] = sum;
+}}
+"#, tile_size);
 
                 let lib = self.device.new_library_with_source(&shader, &CompileOptions::new())
                     .map_err(|e| format!("Compile: {:?}", e))?;
@@ -97,7 +102,6 @@ impl MetalContext {
             }
         };
 
-        // Create buffers
         let a_buf = self.device.new_buffer_with_data(
             a.as_ptr() as *const _, (m * k * mem::size_of::<f32>()) as u64,
             MTLResourceOptions::StorageModeShared,
@@ -111,7 +115,6 @@ impl MetalContext {
             MTLResourceOptions::StorageModeShared,
         );
 
-        // Encode compute
         let cmd = self.queue.new_command_buffer();
         let enc = cmd.new_compute_command_encoder();
         enc.set_compute_pipeline_state(&pipeline);
@@ -128,7 +131,6 @@ impl MetalContext {
             (m as u64 + tile_size as u64 - 1) / tile_size as u64,
             1,
         );
-
         enc.dispatch_thread_groups(tg_count, tg_size);
         enc.end_encoding();
         cmd.commit();

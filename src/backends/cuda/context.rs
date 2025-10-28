@@ -4,7 +4,6 @@ use ndarray::Array2;
 use std::ptr;
 use std::ffi::c_void;
 
-// ---- ERROR HANDLING HELPERS ----
 fn cuda_error_to_i32(status: cudaError_t) -> Result<(), i32> {
     if status != cudaError_t::cudaSuccess {
         Err(status as i32)
@@ -12,6 +11,7 @@ fn cuda_error_to_i32(status: cudaError_t) -> Result<(), i32> {
         Ok(())
     }
 }
+
 fn cublas_error_to_i32(status: cublasStatus_t) -> Result<(), i32> {
     if status != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
         Err(status as i32)
@@ -20,7 +20,6 @@ fn cublas_error_to_i32(status: cublasStatus_t) -> Result<(), i32> {
     }
 }
 
-// ---- CONTEXT STRUCT ----
 pub struct CudaContext {
     pub handle: cublasHandle_t,
     pub streams: Vec<*mut CUstream_st>,
@@ -33,10 +32,10 @@ pub struct CudaContext {
     pub buffer_size_b: usize,
     pub buffer_size_c: usize,
 }
+
 unsafe impl Send for CudaContext {}
 unsafe impl Sync for CudaContext {}
 
-// ---- CONTEXT IMPLEMENTATION ----
 impl CudaContext {
     pub fn new(
         max_a_elems: usize,
@@ -49,7 +48,6 @@ impl CudaContext {
             let mut handle = ptr::null_mut();
             cublas_error_to_i32(cublasCreate_v2(&mut handle))?;
 
-            // Create multiple streams.
             let mut streams = Vec::with_capacity(n_streams);
             for _ in 0..n_streams {
                 let mut stream: *mut CUstream_st = ptr::null_mut();
@@ -57,13 +55,9 @@ impl CudaContext {
                 streams.push(stream);
             }
 
-            // Workspace allocation.
             let mut workspace: *mut c_void = ptr::null_mut();
-            cuda_error_to_i32(cudaMalloc(
-                &mut workspace as *mut *mut c_void, workspace_size
-            ))?;
+            cuda_error_to_i32(cudaMalloc(&mut workspace as *mut *mut c_void, workspace_size))?;
 
-            // Device buffers.
             let mut buffer_a = ptr::null_mut();
             let mut buffer_b = ptr::null_mut();
             let mut buffer_c = ptr::null_mut();
@@ -71,6 +65,7 @@ impl CudaContext {
             let buffer_size_a = max_a_elems * std::mem::size_of::<f32>();
             let buffer_size_b = max_b_elems * std::mem::size_of::<f32>();
             let buffer_size_c = max_c_elems * std::mem::size_of::<f32>();
+
             cuda_error_to_i32(cudaMalloc(&mut buffer_a as *mut _ as *mut *mut _, buffer_size_a))?;
             cuda_error_to_i32(cudaMalloc(&mut buffer_b as *mut _ as *mut *mut _, buffer_size_b))?;
             cuda_error_to_i32(cudaMalloc(&mut buffer_c as *mut _ as *mut *mut _, buffer_size_c))?;
@@ -95,6 +90,7 @@ impl CudaContext {
             let size_a = need_a * std::mem::size_of::<f32>();
             let size_b = need_b * std::mem::size_of::<f32>();
             let size_c = need_c * std::mem::size_of::<f32>();
+
             if size_a > self.buffer_size_a {
                 cudaFree(self.buffer_a as *mut _);
                 cuda_error_to_i32(cudaMalloc(&mut self.buffer_a as *mut _ as *mut *mut _, size_a))?;
@@ -114,10 +110,7 @@ impl CudaContext {
         }
     }
 
-    pub fn matmul_f32(
-        &mut self,
-        a: &Array2<f32>, b: &Array2<f32>, stream_idx: usize
-    ) -> Result<Array2<f32>, i32> {
+    pub fn matmul_f32(&mut self, a: &Array2<f32>, b: &Array2<f32>, stream_idx: usize) -> Result<Array2<f32>, i32> {
         let stream = self.streams[stream_idx % self.streams.len()];
         let (m, k) = a.dim();
         let (k2, n) = b.dim();
@@ -140,6 +133,7 @@ impl CudaContext {
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 stream,
             ))?;
+
             cuda_error_to_i32(cudaMemcpyAsync(
                 self.buffer_b as *mut c_void,
                 b.as_ptr() as *const c_void,
@@ -147,9 +141,12 @@ impl CudaContext {
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 stream,
             ))?;
+
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
+
             cublas_error_to_i32(cublasSetStream_v2(self.handle, stream as *mut Struct_CUstream_st))?;
+
             cublas_error_to_i32(cublasSgemm_v2(
                 self.handle,
                 cublasOperation_t::CUBLAS_OP_N,
@@ -161,7 +158,9 @@ impl CudaContext {
                 &beta,
                 self.buffer_c as *mut f32, n as i32,
             ))?;
+
             let mut result = vec![0.0f32; c_elems];
+
             cuda_error_to_i32(cudaMemcpyAsync(
                 result.as_mut_ptr() as *mut c_void,
                 self.buffer_c as *const c_void,
@@ -169,7 +168,9 @@ impl CudaContext {
                 cudaMemcpyKind::cudaMemcpyDeviceToHost,
                 stream,
             ))?;
+
             cuda_error_to_i32(cudaStreamSynchronize(stream))?;
+
             Ok(Array2::from_shape_vec((m, n), result).expect("Shape mismatch"))
         }
     }

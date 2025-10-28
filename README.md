@@ -53,7 +53,6 @@ let c = matmul(a.view(), b.view());
 
 ## Roadmap
 
-- [ ] 0. Rework Architecture s.t. source can build on mac and linux with os recognition
 - [ ] 1. Implement GPU-native matrix/tensor struct in Rust
 - [ ] 2. Implement PyO3 bindings for DeviceMatrix
 - [ ] 3. Rewrite matmul to operate only on device-resident buffers
@@ -69,7 +68,6 @@ let c = matmul(a.view(), b.view());
 - [ ] 12.Autodifferentiation
 - [ ] 13.Neural network primitives
 - [ ] 14.Distributed computing support
-
 
 ## Contributing & Feedback
 
