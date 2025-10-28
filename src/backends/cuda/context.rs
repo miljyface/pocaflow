@@ -1,8 +1,15 @@
-use cuda_runtime_sys::*;
-use cublas_sys::*;
+use cuda_runtime_sys::{cudaError_t, cudaMemcpyKind, cudaMalloc, cudaFree, 
+                       cudaMemcpyAsync, cudaStreamCreate, cudaStreamDestroy, 
+                       cudaStreamSynchronize};
+use cublas_sys::{cublasHandle_t, cublasStatus_t, cublasCreate_v2, 
+                  cublasDestroy_v2, cublasSetStream_v2, cublasSgemm_v2, 
+                  cublasOperation_t};
 use ndarray::Array2;
 use std::ptr;
 use std::ffi::c_void;
+
+// Use explicit type from cuda_runtime_sys to avoid ambiguity
+type CudaStream = *mut cuda_runtime_sys::CUstream_st;
 
 #[inline]
 fn cuda_error_to_string(status: cudaError_t) -> Result<(), String> {
@@ -24,7 +31,7 @@ fn cublas_error_to_string(status: cublasStatus_t) -> Result<(), String> {
 
 pub struct CudaContext {
     pub handle: cublasHandle_t,
-    pub streams: Vec<cudaStream_t>,
+    pub streams: Vec<CudaStream>,
     pub buffer_a: *mut f32,
     pub buffer_b: *mut f32,
     pub buffer_c: *mut f32,
@@ -52,7 +59,7 @@ impl CudaContext {
             // Create CUDA streams
             let mut streams = Vec::with_capacity(n_streams);
             for _ in 0..n_streams {
-                let mut stream: cudaStream_t = ptr::null_mut();
+                let mut stream: CudaStream = ptr::null_mut();
                 cuda_error_to_string(cudaStreamCreate(&mut stream))?;
                 streams.push(stream);
             }
@@ -170,7 +177,11 @@ impl CudaContext {
             let alpha: f32 = 1.0;
             let beta: f32 = 0.0;
 
-            cublas_error_to_string(cublasSetStream_v2(self.handle, stream))?;
+            // Cast stream to cublas-compatible type
+            cublas_error_to_string(cublasSetStream_v2(
+                self.handle, 
+                stream as *mut cublas_sys::CUstream_st
+            ))?;
 
             // cuBLAS uses column-major, so swap A and B
             cublas_error_to_string(cublasSgemm_v2(
