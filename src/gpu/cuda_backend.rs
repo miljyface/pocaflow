@@ -1,27 +1,23 @@
-use cuda_runtime_sys::*;
-use cublas_sys::*;
-use ndarray::{Array2, ShapeBuilder};
+use cuda_runtime_sys::{cudaError_t, cudaStream_t, cudaMalloc, cudaFree, cudaMemcpy, cudaMemcpyKind, cudaStreamCreate, cudaStreamSynchronize, cudaMallocHost, cudaFreeHost, cudaMemcpyAsync};
+use cublas_sys::{cublasHandle_t, cublasCreate_v2, cublasDestroy_v2, cublasSgemm_v2, cublasOperation_t, cublasStatus_t, cublasSetStream_v2};
+use ndarray::Array2;
 use std::ptr;
 
-// Error-checking macros adapted to return Result<(), CudaError>
-#[macro_export]
-macro_rules! cuda_check {
-    ($expr:expr) => {{
-        let status = $expr;
-        if status != cudaError::cudaSuccess {
-            return Err(status);
-        }
-    }};
+// Error helpers
+fn cuda_error_to_i32(status: cudaError_t) -> Result<(), i32> {
+    if status != cudaError_t::cudaSuccess {
+        Err(status as i32)
+    } else {
+        Ok(())
+    }
 }
 
-#[macro_export]
-macro_rules! cublas_check {
-    ($expr:expr) => {{
-        let status = $expr;
-        if status != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
-            return Err(status as i32);
-        }
-    }};
+fn cublas_error_to_i32(status: cublasStatus_t) -> Result<(), i32> {
+    if status != cublasStatus_t::CUBLAS_STATUS_SUCCESS {
+        Err(status as i32)
+    } else {
+        Ok(())
+    }
 }
 
 pub struct CudaContext {
@@ -33,11 +29,10 @@ impl CudaContext {
     pub fn new() -> Result<Self, i32> {
         unsafe {
             let mut handle = ptr::null_mut();
-            cublas_check!(cublasCreate_v2(&mut handle))?;
-
+            cublas_error_to_i32(cublasCreate_v2(&mut handle))?;
             let mut stream = ptr::null_mut();
-            cuda_check!(cudaStreamCreate(&mut stream))?;
-            cublas_check!(cublasSetStream(handle, stream))?;
+            cuda_error_to_i32(cudaStreamCreate(&mut stream))?;
+            cublas_error_to_i32(cublasSetStream_v2(handle, stream))?;
             Ok(CudaContext { handle, stream })
         }
     }
@@ -52,52 +47,49 @@ impl CudaContext {
             let b_bytes = k * n * std::mem::size_of::<f32>();
             let c_bytes = m * n * std::mem::size_of::<f32>();
 
-            // Allocate device buffers just for needed sizes
             let mut buffer_a = ptr::null_mut();
             let mut buffer_b = ptr::null_mut();
             let mut buffer_c = ptr::null_mut();
-            cuda_check!(cudaMalloc(&mut buffer_a as *mut _ as *mut *mut _, a_bytes))?;
-            cuda_check!(cudaMalloc(&mut buffer_b as *mut _ as *mut *mut _, b_bytes))?;
-            cuda_check!(cudaMalloc(&mut buffer_c as *mut _ as *mut *mut _, c_bytes))?;
 
-            // Allocate pinned (page-locked) host memory for output buffer
+            cuda_error_to_i32(cudaMalloc(&mut buffer_a as *mut _ as *mut *mut _, a_bytes))?;
+            cuda_error_to_i32(cudaMalloc(&mut buffer_b as *mut _ as *mut *mut _, b_bytes))?;
+            cuda_error_to_i32(cudaMalloc(&mut buffer_c as *mut _ as *mut *mut _, c_bytes))?;
+
             let mut c_host: *mut f32 = ptr::null_mut();
-            cuda_check!(cudaMallocHost(&mut c_host as *mut _ as *mut *mut _, c_bytes))?;
+            cuda_error_to_i32(cudaMallocHost(&mut c_host as *mut _ as *mut *mut _, c_bytes))?;
 
-            // Asynchronous memory transfers
-            cuda_check!(cudaMemcpyAsync(
+            // Copy data to device (async)
+            cuda_error_to_i32(cudaMemcpyAsync(
                 buffer_a,
-                a.as_ptr() as *const _,
-                a_bytes,
+                a.as_ptr() as *const _, a_bytes,
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 self.stream,
             ))?;
-            cuda_check!(cudaMemcpyAsync(
+            cuda_error_to_i32(cudaMemcpyAsync(
                 buffer_b,
-                b.as_ptr() as *const _,
-                b_bytes,
+                b.as_ptr() as *const _, b_bytes,
                 cudaMemcpyKind::cudaMemcpyHostToDevice,
                 self.stream,
             ))?;
 
-            // Matrix multiply: C = A * B; ensure shapes and flags are correct (column-major)
-            let alpha = 1.0f32;
-            let beta = 0.0f32;
-            // WARNING: cuBLAS expects column-major; if ndarray is row-major, swap shape order and use transpose flags.
-            cublas_check!(cublasSgemm_v2(
+            let alpha: f32 = 1.0;
+            let beta: f32 = 0.0;
+
+            // cuBLAS expects column-major: ndarray is row-major;
+            // So swap m/n and use transpose if needed: _OP_T
+            cublas_error_to_i32(cublasSgemm_v2(
                 self.handle,
-                cublasOperation_t::CUBLAS_OP_N, // Or _T (transpose) if needed for layout!
-                cublasOperation_t::CUBLAS_OP_N,
-                n as i32, m as i32, k as i32,
+                cublasOperation_t::CUBLAS_OP_T, // transpose a
+                cublasOperation_t::CUBLAS_OP_T, // transpose b
+                m as i32, n as i32, k as i32,
                 &alpha,
-                buffer_b, n as i32,
-                buffer_a, k as i32,
+                buffer_a as *const f32, k as i32,
+                buffer_b as *const f32, n as i32,
                 &beta,
-                buffer_c, n as i32,
+                buffer_c as *mut f32, m as i32,
             ))?;
 
-            // Copy result back asynchronously
-            cuda_check!(cudaMemcpyAsync(
+            cuda_error_to_i32(cudaMemcpyAsync(
                 c_host as *mut _,
                 buffer_c as *const _,
                 c_bytes,
@@ -105,11 +97,11 @@ impl CudaContext {
                 self.stream,
             ))?;
 
-            // Wait for all operations to finish
-            cuda_check!(cudaStreamSynchronize(self.stream))?;
+            cuda_error_to_i32(cudaStreamSynchronize(self.stream))?;
 
             let result = std::slice::from_raw_parts(c_host, m * n);
-            let output = Array2::from_shape_vec((m, n).strides((n as isize, 1)), result.to_vec()).unwrap();
+            let output = Array2::from_shape_vec((m, n), result.to_vec()).expect("Shape should match");
+
             cudaFree(buffer_a as *mut _);
             cudaFree(buffer_b as *mut _);
             cudaFree(buffer_c as *mut _);
