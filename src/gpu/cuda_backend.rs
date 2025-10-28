@@ -1,3 +1,5 @@
+// src/gpu/cuda_backend.rs
+
 use cuda_runtime_sys::{
     cudaError_t, cudaStreamCreate, cudaStreamDestroy,
     cudaMalloc, cudaFree, cudaMallocHost, cudaFreeHost,
@@ -92,7 +94,7 @@ impl CudaContext {
             cublas_error_to_i32(
                 cublasSgemm_v2(
                     self.handle,
-                    cublasOperation_t::CUBLAS_OP_T, // transpose
+                    cublasOperation_t::CUBLAS_OP_T,
                     cublasOperation_t::CUBLAS_OP_T,
                     m as i32, n as i32, k as i32,
                     &alpha,
