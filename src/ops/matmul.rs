@@ -17,7 +17,7 @@ pub fn matmul<'py>(
     b: PyReadonlyArray2<'py, f32>,
 ) -> PyResult<&'py PyArray2<f32>> {
     #[cfg(target_os = "linux")]
-    return cuda::matmul::matmul_f32(py, a, b);
+    return cuda::matmul::cuda_matmul_f32(py, a, b);
     
     #[cfg(target_os = "macos")]
     return metal::matmul::matmul_f32(py, a, b);
